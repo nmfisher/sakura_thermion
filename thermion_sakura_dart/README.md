@@ -71,12 +71,11 @@ From this package directory, capture each stage without Flutter:
 dart run bin/render_macos_diagnostic.dart /tmp/sakura_macos
 ```
 
-This selects Metal on macOS and writes `/tmp/sakura_macos.shadow.png`,
-`/tmp/sakura_macos.scene.png`, and `/tmp/sakura_macos.final.png`. If the scene
+This selects Metal on macOS and writes `/tmp/sakura_macos.scene.png` and
+`/tmp/sakura_macos.final.png`. If the scene
 capture is visible but the final capture is black, the failure is in the live
-post-process path. Pass `--no-shadow` or `--no-ink` after the output prefix to
-disable those stages while diagnosing. The `.final.rgba32f` raw capture is also
-kept for numeric inspection.
+post-process path. The `.final.rgba32f` raw capture is also kept for numeric
+inspection.
 
 ## Build & run (web)
 
