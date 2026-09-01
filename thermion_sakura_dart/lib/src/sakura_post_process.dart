@@ -4,6 +4,8 @@
 // then runs a fullscreen triangle with a caller-supplied material that samples
 // RT1's textures. The pp view renders to its own render target (RT2).
 //
+import 'dart:async';
+
 // Material contract: the material must declare
 //   sampler2d tDiffuse ; sampler2d tDepth ; float2 texelSize
 import 'package:thermion_dart/thermion_dart.dart';
@@ -22,7 +24,7 @@ class SakuraPostProcess {
   final IndexBuffer _quadIB;
   final TextureSampler _colorSampler;
   final TextureSampler _depthSampler;
-  final RenderTarget? _outputRT;
+  RenderTarget? _outputRT;
 
   RenderTarget? _sceneRT;
   RenderTarget? _ppRT;
@@ -30,6 +32,9 @@ class SakuraPostProcess {
   Texture? _sceneDepth;
   Texture? _ppColor;
   Texture? _ppDepth;
+  Timer? _outputTargetTimer;
+  bool _updatingOutputTarget = false;
+  bool _destroyed = false;
 
   SakuraPostProcess._({
     required this.view,
@@ -249,7 +254,11 @@ class SakuraPostProcess {
     return pp;
   }
 
-  Future<void> resize(int width, int height) async {
+  Future<void> resize(int width, int height,
+      {RenderTarget? outputRenderTarget}) async {
+    if (outputRenderTarget != null) {
+      _outputRT = outputRenderTarget;
+    }
     final sceneColor = await _app.createTexture(
       width,
       height,
@@ -317,11 +326,55 @@ class SakuraPostProcess {
       _ppDepth = ppDepth;
     } else {
       await view.setRenderTarget(_outputRT);
+      await _ppRT?.destroy();
+      await _ppColor?.destroy();
+      await _ppDepth?.destroy();
+      _ppRT = null;
+      _ppColor = null;
+      _ppDepth = null;
     }
     await view.setViewport(width, height);
   }
 
+  /// Keeps the post-process connected when Flutter creates or replaces its
+  /// platform render target. The main view normally points at [_sceneRT]; any
+  /// other non-null target was assigned by the Flutter surface lifecycle and
+  /// must become the post view's output.
+  void followPlatformOutputTarget({
+    Duration interval = const Duration(milliseconds: 50),
+  }) {
+    _outputTargetTimer ??= Timer.periodic(interval, (_) {
+      unawaited(_adoptPlatformOutputTarget());
+    });
+    unawaited(_adoptPlatformOutputTarget());
+  }
+
+  Future<void> _adoptPlatformOutputTarget() async {
+    if (_destroyed || _updatingOutputTarget) return;
+    _updatingOutputTarget = true;
+    try {
+      final candidate = await _mainView.getRenderTarget();
+      if (candidate == null || identical(candidate, _sceneRT)) return;
+
+      final viewport = await _mainView.getViewport();
+      if (viewport.width <= 0 || viewport.height <= 0) return;
+
+      await resize(
+        viewport.width,
+        viewport.height,
+        outputRenderTarget: candidate,
+      );
+    } finally {
+      _updatingOutputTarget = false;
+    }
+  }
+
   Future<void> destroy() async {
+    _destroyed = true;
+    _outputTargetTimer?.cancel();
+    while (_updatingOutputTarget) {
+      await Future<void>.delayed(Duration.zero);
+    }
     await view.setRenderTarget(null);
     await _mainView.setRenderTarget(_outputRT);
     await view.setCamera(null);

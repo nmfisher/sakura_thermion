@@ -432,6 +432,17 @@ Future<void> buildPortedFilamentScene(ThermionViewer viewer) async {
   // Reference post pipeline: depth second-difference ink followed by the
   // split-tone grade. SakuraPostProcess redirects the main view into a float
   // scene target and sends this fullscreen pass to the Flutter output target.
+  var flutterOutputTarget = await viewer.view.getRenderTarget();
+  for (var attempt = 0;
+      flutterOutputTarget == null && attempt < 300;
+      attempt++) {
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+    flutterOutputTarget = await viewer.view.getRenderTarget();
+  }
+  if (flutterOutputTarget == null) {
+    throw StateError('Flutter did not bind a render target to the Sakura view');
+  }
+
   final viewport = await viewer.view.getViewport();
   if (viewport.width > 0 && viewport.height > 0) {
     final postMat = await app.createMaterial(sakuraPostFilamat);
@@ -476,6 +487,7 @@ Future<void> buildPortedFilamentScene(ThermionViewer viewer) async {
       width: viewport.width,
       height: viewport.height,
     );
+    post.followPlatformOutputTarget();
     final swapChains = app.renderManager
         .getAttachedSwapChains(viewer.view)
         .toList(growable: false);
