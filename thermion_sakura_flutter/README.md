@@ -1,12 +1,14 @@
-# Sakura Explorer
+# Thermion Sakura Flutter
 
 Interactive Flutter viewer for the Sakura Crossing **realtime toon** scene. It
-loads the reference's own extracted geometry (`ref_geo*.bin`) into a live
-Thermion viewport with the per-pixel cel material, painted sky, and per-face
-CPU cast shadows — the same scene `thermion_sakura_dart/bin/render_realtime_ref.dart`
-renders headless — and lets you fly around it. **Ported** mode loads the Dart
-scene used by the fidelity renderer and applies its live depth-ink, anime grade,
-vignette, and FXAA finale through the same `sakura_post` material.
+loads the reference's extracted geometry (`ref_geo*.bin`) into a live Thermion
+viewport with the per-pixel cel material and painted sky — the same scene
+`thermion_sakura_dart/bin/render_realtime_ref.dart` renders headless — and lets
+you fly around it. This reference-geometry mode currently uses the legacy CPU
+`SunShadowMap`. **Ported** mode assembles the Dart scene used by the fidelity
+renderer, renders visible caster geometry into a light-space shadow texture,
+samples that texture per pixel, and applies live depth ink, anime grade,
+vignette, and FXAA through the `sakura_post` material.
 
 ## Run
 
@@ -17,8 +19,9 @@ flutter run -d linux      # or macos / windows
 
 > Requires a real GPU / DRI render node (`/dev/dri/renderD128` on Linux).
 > thermion_flutter's desktop GL path does not fall back to software rendering,
-> so the app won't run inside a GPU-less container/CI (it builds fine there;
-> the headless `render_realtime_ref.dart` is the path that runs without a GPU).
+> so the app will not run inside a GPU-less container/CI. A clean Linux build
+> from the pinned Git dependency currently stops during Thermion's CMake header
+> discovery. The headless Dart renderer remains the supported CI render path.
 
 ## Geometry
 
@@ -40,9 +43,10 @@ why the bundled copy is gzip-compressed (it decompresses at load).
 
 ## How it maps to the code
 
-- `buildSakuraScene(viewer, geoPath)` — ports `render_realtime_ref.dart`'s
-  scene setup: `refGeoToPacked` (with the CPU `SunShadowMap`, multi-ramp, canopy
-  no-receive-shadow), the `sakura_toon_rt` material, the `sky.dart` dome, the
-  linear color grade, and the planet-surface spawn camera.
+- `buildSakuraScene(viewer, geo)` — loads extracted reference geometry with the
+  legacy CPU `SunShadowMap`, multi-ramp cel shading, canopy no-receive-shadow,
+  the `sky.dart` dome, linear color grade, and planet-surface spawn camera.
+- `buildPortedFilamentScene(viewer)` — assembles the Dart-authored world and
+  drives its per-pixel light-space shadow map and `sakura_post` finale.
 - The `ViewerWidget` (from `thermion_flutter`) owns the Thermion engine,
   texture binding, and the free-flight gesture manipulator.

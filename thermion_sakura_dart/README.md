@@ -3,7 +3,7 @@
 A re-implementation of the
 [sakura-crossing](https://github.com/Kenton-GMI/sakura-crossing) scene — an
 explorable Japanese suburban railway-crossing street rendered in a cel-shaded
-anime style — using **Dart + Thermion (Filament) + HTML/CSS only**.
+anime style — using **Dart + Thermion (Filament)**.
 
 The goal is visual fidelity with the reference: the same world, the same cel
 shading, the same depth-based ink outlines, the same anime colour grade.
@@ -13,7 +13,8 @@ shading, the same depth-based ink outlines, the same anime colour grade.
 The reference renders Three.js `MeshToonMaterial` (quantised light bands + cool
 violet shadow tint) against a two-light anime setup, then runs a three-pass
 post pipeline (`src/core/post.js`): **depth ink → grade → FXAA**. This port
-reproduces that pipeline **exactly**, end to end in linear space.
+reproduces the same pipeline in linear space for native fidelity renders and
+through the `sakura_post` material in the interactive Flutter application.
 
 - **`lib/src/cel.dart`** — the cel shader as a pure function: per-face `dotNL`
   quantisation through the reference's hand-authored ramps (`RAMPS`), the
@@ -23,8 +24,10 @@ reproduces that pipeline **exactly**, end to end in linear space.
   in linear, like `THREE.Fog`.
 - **`lib/src/mesh.dart`** — a face-accumulating builder. Every face is
   flat-shaded (one cel band per face). Box faces are wound CCW-outward so the
-  visible walls shade toward the camera. Baked cast shadows + distance fog are
-  applied to ground faces. Vertex colours are **linear**.
+  visible walls shade toward the camera. Vertex colours are **linear**. The
+  current native and Flutter ported renderers generate a light-space shadow
+  texture from visible caster geometry and sample it per pixel; older baked
+  shadow helpers remain available for legacy render paths.
 - **`lib/src/glb.dart`** — a minimal glTF 2.0 binary encoder. The whole world
   packs into one GLB with a single unlit vertex-colour material and loads via
   `loadGltfFromBuffer`. (The Thermion web build renders nothing for the custom
@@ -51,7 +54,7 @@ operating on two float buffers the native renderer dumps:
 ## Render (native arm64 Linux + OpenGL)
 
 ```sh
-./render.sh [output.png] [exposure]   # exposure defaults to 0.72
+./render.sh [output.png] [exposure]   # exposure defaults to 0.95
 ```
 
 This runs `bin/render.dart` under `xvfb-run`

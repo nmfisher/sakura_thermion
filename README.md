@@ -63,6 +63,6 @@ See `thermion_sakura_dart/README.md` for the full fidelity workflow and implemen
 
 ## Validation status
 
-- `thermion_sakura_dart` resolves their pinned Git dependencies and pass scoped Dart analysis.
+- `thermion_sakura_dart` resolves its pinned Git dependencies and passes scoped Dart analysis.
 - `thermion_sakura_flutter` resolves dependencies and completes Flutter analysis with informational lints only.
 - A clean Linux Flutter build currently stops in Thermion CMake header discovery when Thermion is consumed as a Git dependency. This is upstream integration behavior, not a Sakura material or Dart compilation error.
