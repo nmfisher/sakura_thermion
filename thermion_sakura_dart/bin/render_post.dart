@@ -28,6 +28,23 @@ import 'package:thermion_sakura_dart/src/world/sky.dart';
 import 'package:thermion_sakura_dart/src/world_ref/ported_scene.dart';
 import 'package:thermion_sakura_dart/src/world_ref/train.dart';
 
+Future<void> _writeCapturePng(
+    Uint8List bytes, int width, int height, String path) async {
+  final pixels = Float32List.view(
+      bytes.buffer, bytes.offsetInBytes, bytes.lengthInBytes ~/ 4);
+  final output = img.Image(width: width, height: height);
+  for (var y = 0; y < height; y++) {
+    for (var x = 0; x < width; x++) {
+      final offset = (y * width + x) * 4;
+      int channel(int index) =>
+          (pixels[offset + index].clamp(0.0, 1.0) * 255).round();
+      output.setPixelRgba(x, y, channel(0), channel(1), channel(2), channel(3));
+    }
+  }
+  await File(path).writeAsBytes(img.encodePng(output));
+  stdout.writeln('wrote ' + path);
+}
+
 Future<void> main(List<String> argv) async {
   const w = 1600, h = 900;
   final inkEnabled = !argv.contains('--no-ink');
@@ -85,6 +102,7 @@ Future<void> main(List<String> argv) async {
   final cameraPitch = parseGradeValue('pitch', -0.008);
   final referenceGeoPath = parseStringValue('reference-geo');
   final referenceAtlasPath = parseStringValue('reference-atlas');
+  final capturePrefix = parseStringValue('capture-prefix');
   final referenceBytes = referenceGeoPath == null
       ? null
       : await File(referenceGeoPath).readAsBytes();
@@ -289,8 +307,9 @@ Future<void> main(List<String> argv) async {
         '${packed.positions.length ~/ 3} verts');
   }
 
-  await FFIFilamentApp.create(
-      config: FFIFilamentConfig(backend: Backend.OPENGL));
+  final backend = Platform.isMacOS ? Backend.METAL : Backend.OPENGL;
+  stdout.writeln('backend: ' + backend.name);
+  await FFIFilamentApp.create(config: FFIFilamentConfig(backend: backend));
   final app = FilamentApp.instance! as FFIFilamentApp;
   final sc = await app.createHeadlessSwapChain(w, h);
 
@@ -645,8 +664,8 @@ Future<void> main(List<String> argv) async {
   // The live finale post: sakura_post (GRADE_SHADER) via SakuraPostProcess.
   final postMat = await app.createMaterial(sakuraPostFilamat);
   final postInst = await postMat.createInstance() as FFIMaterialInstance;
-  final residualUri = await Isolate.resolvePackageUri(
-      Uri.parse('package:thermion_sakura_dart/assets/urayama_post_residual.png'));
+  final residualUri = await Isolate.resolvePackageUri(Uri.parse(
+      'package:thermion_sakura_dart/assets/urayama_post_residual.png'));
   if (residualUri == null) {
     throw StateError('Could not resolve the urayama post residual asset');
   }
@@ -743,6 +762,10 @@ Future<void> main(List<String> argv) async {
       view: shadowView.view,
       pixelDataFormat: PixelDataFormat.RGBA,
       pixelDataType: PixelDataType.FLOAT);
+  if (capturePrefix != null) {
+    await _writeCapturePng(shadowCapture.first.$2, shadowSize, shadowSize,
+        capturePrefix + '.shadow.png');
+  }
   if (Platform.environment['SHADOW_DEBUG'] == '1') {
     await File('/tmp/sakura_shadow.bin').writeAsBytes(shadowCapture.first.$2);
     final shadowPixels = Float32List.view(shadowCapture.first.$2.buffer);
@@ -797,7 +820,12 @@ Future<void> main(List<String> argv) async {
         pixelDataFormat: PixelDataFormat.RGBA,
         pixelDataType: PixelDataType.FLOAT);
   }
+
   await File('/tmp/sakura_post_scene.bin').writeAsBytes(sceneCapture!.first.$2);
+  if (capturePrefix != null) {
+    await _writeCapturePng(
+        sceneCapture.first.$2, w, h, capturePrefix + '.scene.png');
+  }
   final res = await app.capture(sc,
       view: pp.view,
       pixelDataFormat: PixelDataFormat.RGBA,
@@ -808,7 +836,11 @@ Future<void> main(List<String> argv) async {
           : inkEnabled
               ? '/tmp/sakura_post.bin'
               : '/tmp/sakura_post_noink.bin');
+
   await File(output).writeAsBytes(res.first.$2);
+  if (capturePrefix != null) {
+    await _writeCapturePng(res.first.$2, w, h, capturePrefix + '.final.png');
+  }
   print('wrote $output (live-graded)');
   stdout.writeln('SIZE $w $h');
   exit(0);
