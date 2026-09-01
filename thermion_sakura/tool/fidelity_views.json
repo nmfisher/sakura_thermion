@@ -1,0 +1,96 @@
+{
+  "width": 1600,
+  "height": 900,
+  "views": [
+    {
+      "name": "crossing_spawn",
+      "description": "Opening railway-crossing view",
+      "px": 1.85,
+      "pz": 13.6,
+      "eye": 1.62,
+      "yaw": 0.2,
+      "pitch": -0.008,
+      "renderer_args": ["--shadow-groups=sakura,train,railway,poles,shop"]
+    },
+    {
+      "name": "school_approach",
+      "description": "Uphill school approach and south district",
+      "px": 3.0,
+      "pz": -54.0,
+      "eye": 2.67,
+      "yaw": 0.0,
+      "pitch": -0.02,
+      "renderer_args": ["--all-shadows"]
+    },
+    {
+      "name": "onsen_street",
+      "description": "Onsen terrace from the shrine-side gate",
+      "px": -22.5,
+      "pz": 48.8,
+      "eye": 4.82,
+      "yaw": 1.5707963267948966,
+      "pitch": -0.015,
+      "renderer_args": ["--all-shadows"]
+    },
+    {
+      "name": "yonchome_hall",
+      "description": "Northern lane and community hall",
+      "px": 6.0,
+      "pz": 70.0,
+      "eye": 2.15,
+      "yaw": -0.75,
+      "pitch": -0.015,
+      "renderer_args": ["--all-shadows", "--native-shadow-layers=3"]
+    },
+    {
+      "name": "rokuchome_turnaround",
+      "description": "Eastern residential street and bus turnaround",
+      "px": 51.0,
+      "pz": 52.2,
+      "eye": 2.136,
+      "yaw": -1.5707963267948966,
+      "pitch": -0.015,
+      "renderer_args": ["--all-shadows"]
+    },
+    {
+      "name": "nanachome_store",
+      "description": "Northern supermarket forecourt",
+      "px": -38.0,
+      "pz": 91.6,
+      "eye": 2.18,
+      "yaw": 0.0,
+      "pitch": -0.01,
+      "renderer_args": ["--shadow-groups=nanachome"]
+    },
+    {
+      "name": "urayama_road",
+      "description": "Back-hill road behind the school",
+      "px": 46.0,
+      "pz": -90.0,
+      "eye": 2.78,
+      "yaw": -1.5707963267948966,
+      "pitch": -0.02,
+      "renderer_args": ["--all-shadows"]
+    },
+    {
+      "name": "lake_park",
+      "description": "Lake park plaza looking toward the pier",
+      "px": 136.0,
+      "pz": -76.0,
+      "eye": 8.519,
+      "yaw": -1.5707963267948966,
+      "pitch": -0.01,
+      "renderer_args": ["--all-shadows"]
+    },
+    {
+      "name": "east_tunnel",
+      "description": "East tunnel from the accessible railside viewpoint",
+      "px": 91.0,
+      "pz": 7.2,
+      "eye": 1.69,
+      "yaw": -1.5707963267948966,
+      "pitch": -0.015,
+      "renderer_args": ["--all-shadows"]
+    }
+  ]
+}

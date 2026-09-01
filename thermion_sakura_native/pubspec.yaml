@@ -1,0 +1,22 @@
+name: thermion_sakura_native
+description: Native headless renderer for Sakura Crossing (arm64 Linux) — fast iteration on shaders/post.
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: ^3.3.0
+dependencies:
+  thermion_dart:
+    git:
+      url: https://github.com/nmfisher/thermion.git
+      ref: d10b1a891df324a17c772e5f73c382e98b3e2a06
+      path: thermion_dart
+  thermion_sakura:
+    path: ../thermion_sakura
+  image: ^4.3.0
+  path: ^1.9.0
+# Native build: NO skip_native_build, so the thermion_dart C++ + arm64 Filament
+# libs compile. Release mode for software-renderer perf.
+hooks:
+  user_defines:
+    thermion_dart:
+      mode: release

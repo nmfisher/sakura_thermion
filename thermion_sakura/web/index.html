@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sakura Crossing — 桜踏切</title>
+<!--
+  Sakura Crossing — Dart + Thermion + HTML + CSS.
+  The Emscripten module loads first onto window.thermion_dart, then the Dart
+  (WASM) entry boots Filament, builds the world, and runs the render loop.
+-->
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #e6ecf7;
+    font-family: 'Yu Gothic UI', 'Yu Gothic', Meiryo, 'Segoe UI', system-ui, sans-serif;
+    color: #3a3350;
+  }
+  canvas#thermion_canvas { display: block; width: 100vw; height: 100vh; }
+
+  /* screen-space vignette — the reference's final grade step (the depth/ink and
+     split-tone are baked into the geometry; the vignette is radial, so CSS). */
+  .vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 4;
+    background: radial-gradient(ellipse 90% 80% at center,
+      rgba(0,0,0,0) 55%, rgba(45,38,68,0.16) 80%, rgba(45,38,68,0.34) 100%);
+  }
+
+  .hud { position: fixed; inset: 0; pointer-events: none; }
+
+  /* ---------- crosshair ---------- */
+  .crosshair {
+    position: absolute; left: 50%; top: 50%;
+    width: 6px; height: 6px; margin: -3px 0 0 -3px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.85);
+    box-shadow: 0 0 0 1.5px rgba(58,51,80,.55);
+    opacity: 0; transition: opacity .3s ease;
+  }
+  .crosshair.on { opacity: .8; }
+
+  /* ---------- interaction prompt ---------- */
+  .prompt {
+    position: absolute; left: 50%; bottom: 15%;
+    transform: translate(-50%, 8px);
+    padding: 8px 18px; border-radius: 999px;
+    background: rgba(252,250,252,.82);
+    border: 1.5px solid rgba(58,51,80,.35);
+    font-size: 14px; font-weight: 600; white-space: nowrap;
+    opacity: 0; transition: opacity .18s ease, transform .18s ease;
+  }
+  .prompt.on { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ---------- transient toast ---------- */
+  .toast {
+    position: absolute; left: 50%; top: 12%;
+    transform: translate(-50%, -6px);
+    padding: 7px 16px; border-radius: 999px;
+    background: rgba(252,250,252,.8);
+    border: 1.5px solid rgba(58,51,80,.3);
+    font-size: 13px; font-weight: 600; color: #4c4568;
+    white-space: nowrap;
+    opacity: 0; transition: opacity .25s ease, transform .25s ease;
+  }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ---------- hint line ---------- */
+  .hint {
+    position: absolute; left: 18px; bottom: 14px;
+    font-size: 12.5px; padding: 7px 13px; border-radius: 8px;
+    background: rgba(252,250,252,.6);
+    border: 1px solid rgba(58,51,80,.16);
+    color: #4c4568; transition: opacity .8s ease;
+  }
+  .hint b { color: #3a3350; }
+  .hint.faded { opacity: 0; }
+
+  /* ---------- loading ---------- */
+  #loading {
+    position: absolute; inset: 0; z-index: 6;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px;
+    background: #e6ecf7; color: #56506e;
+    font: 13px ui-monospace, monospace;
+  }
+  #loading[hidden] { display: none !important; }
+  #loading .spinner {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 3px solid rgba(58,51,80,.16);
+    border-top-color: #8f6fb5;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #error {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    color: #b5322f; background: rgba(255,255,255,.9); padding: 14px 18px;
+    border-radius: 8px; font: 13px ui-monospace, monospace; max-width: 80%;
+    white-space: pre-wrap; display: none;
+  }
+
+  /* ---------- title / start card ---------- */
+  .overlay {
+    position: absolute; inset: 0; pointer-events: auto; z-index: 5;
+    display: grid; place-items: center;
+    background:
+      linear-gradient(135deg, rgba(66,74,112,.48), rgba(222,140,151,.22) 48%, rgba(246,229,219,.38)),
+      rgba(235,235,244,.26);
+    backdrop-filter: blur(8px) saturate(.82);
+    transition: opacity .45s ease, visibility .45s ease;
+    isolation: isolate;
+  }
+  .overlay::before {
+    content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(circle at 12% 16%, rgba(255,245,238,.62) 0 2px, transparent 3px),
+      radial-gradient(circle at 82% 24%, rgba(255,213,219,.64) 0 3px, transparent 4px),
+      radial-gradient(circle at 74% 82%, rgba(255,244,235,.58) 0 2px, transparent 3px),
+      radial-gradient(circle at 24% 76%, rgba(255,207,216,.54) 0 2px, transparent 3px);
+    background-size: 92px 86px, 138px 126px, 108px 116px, 154px 142px;
+    opacity: .72; transform: rotate(-4deg) scale(1.08);
+  }
+  .overlay.hidden { opacity: 0; visibility: hidden; }
+
+  .menu-panel {
+    width: min(880px, 92vw); display: grid;
+    grid-template-columns: 1.05fr 1fr; gap: 0;
+    border-radius: 20px; overflow: hidden;
+    background: rgba(252,250,252,.92);
+    border: 1px solid rgba(58,51,80,.14);
+    box-shadow: 0 30px 80px -30px rgba(58,51,80,.5);
+  }
+  @media (max-width: 720px) { .menu-panel { grid-template-columns: 1fr; } }
+
+  .menu-art {
+    position: relative; padding: 30px 28px;
+    background:
+      linear-gradient(160deg, #f2c9c2 0%, #f6d9d0 30%, #fbe3d6 65%, #fdeede 100%);
+    display: flex; flex-direction: column; justify-content: space-between;
+    min-height: 320px; color: #4a4468;
+  }
+  .art-index { font: 600 11px/1 ui-monospace, monospace; letter-spacing: .14em;
+    text-transform: uppercase; color: #6f6890; }
+  .art-kanji { font-size: 46px; font-weight: 800; letter-spacing: .04em;
+    margin-top: 6px; color: #3a3350; text-shadow: 0 2px 10px rgba(255,255,255,.5); }
+  .crossing-mark {
+    display: flex; align-items: center; gap: 10px; margin: 18px 0;
+  }
+  .crossing-mark .bar { width: 46px; height: 5px; border-radius: 3px;
+    background: #3a3350; box-shadow: 0 7px 0 #f4c033, 0 14px 0 #3a3350; }
+  .crossing-mark .signal { width: 14px; height: 14px; border-radius: 50%;
+    background: #e0453f; box-shadow: 0 0 12px rgba(224,69,63,.7); }
+  .art-caption { display: flex; flex-direction: column; gap: 2px; }
+  .art-caption span { font-size: 12px; color: #6f6890; }
+  .art-caption strong { font-size: 20px; color: #3a3350; }
+
+  .menu-copy { padding: 34px 32px; display: flex; flex-direction: column; gap: 12px; }
+  .menu-kicker { font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+    color: #8f88a8; }
+  .menu-copy h1 { margin: 0; font-size: 38px; font-weight: 800; letter-spacing: -.01em;
+    color: #2e2942; }
+  .menu-copy h1 span { color: #cf6a78; }
+  .menu-jp { font-size: 15px; color: #6f6890; letter-spacing: .12em; }
+  .menu-jp small { font-size: 10px; opacity: .7; margin-left: 6px; }
+  .menu-description { margin: 6px 0 0; font-size: 13.5px; line-height: 1.7; color: #524c6c; }
+  .control-strip { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px;
+    font-size: 12px; color: #6f6890; }
+  .control-strip b { color: #3a3350; }
+  .menu-action {
+    margin-top: 8px; padding: 13px 20px; border: none; border-radius: 12px;
+    background: linear-gradient(135deg, #8f6fb5, #cf6a78);
+    color: #fff; font: 700 15px/1 'Yu Gothic UI', system-ui, sans-serif;
+    letter-spacing: .03em; cursor: pointer; display: inline-flex; align-items: center;
+    gap: 10px; justify-content: center; box-shadow: 0 10px 26px -10px rgba(143,111,181,.8);
+    transition: transform .12s ease;
+  }
+  .menu-action:hover { transform: translateY(-1px); }
+  .menu-action i { font-style: normal; font-size: 18px; }
+  .menu-foot { display: flex; justify-content: space-between; font-size: 11px;
+    color: #9a93b2; letter-spacing: .08em; margin-top: 4px; }
+</style>
+</head>
+<body>
+  <canvas id="thermion_canvas"></canvas>
+  <div class="vignette"></div>
+
+  <div class="hud">
+    <div class="crosshair" id="crosshair"></div>
+    <div class="prompt" id="prompt"></div>
+    <div class="toast" id="toast"></div>
+    <div class="hint" id="hint">
+      <b>WASD</b> walk &nbsp;·&nbsp; <b>Shift</b> run &nbsp;·&nbsp; <b>Mouse</b> look
+      &nbsp;·&nbsp; <b>E</b> interact &nbsp;·&nbsp; <b>M</b> music
+    </div>
+  </div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <div id="loading-text">Initializing renderer…</div>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <section class="menu-panel" role="dialog" aria-labelledby="menu-title">
+      <div class="menu-art">
+        <div>
+          <div class="art-index">Nihonmachi · 05:42 PM</div>
+          <div class="art-kanji">春の日本街</div>
+        </div>
+        <div class="crossing-mark">
+          <i class="bar"></i><i class="bar"></i>
+          <span class="signal"></span>
+        </div>
+        <div class="art-caption">
+          <span>Walk slowly</span>
+          <strong>桜の季節</strong>
+        </div>
+      </div>
+      <div class="menu-copy">
+        <div class="menu-kicker">A quiet spring walk</div>
+        <h1 id="menu-title">Sakura <span>Crossing</span></h1>
+        <div class="menu-jp">桜踏切 <small>SAKURA CROSSING</small></div>
+        <p class="menu-description">
+          沿着樱花盛开的日本街慢慢散步。穿过铁道、商店街与河岸，
+          看一座三渲二小镇在黄昏里醒来。
+        </p>
+        <div class="control-strip">
+          <span><b>WASD</b> Move</span>
+          <span><b>Mouse</b> Look</span>
+          <span><b>E</b> Interact</span>
+          <span><b>Shift</b> Run</span>
+        </div>
+        <button class="menu-action" type="button" id="start-btn">
+          <span>进入日本街</span><i aria-hidden="true">→</i>
+        </button>
+        <div class="menu-foot">
+          <span>3D scene · 2D animation spirit</span>
+          <span>CLICK TO BEGIN</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="error"></div>
+
+  <script>
+    const canvas = document.getElementById("thermion_canvas");
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+  </script>
+  <script src="thermion_dart.js"></script>
+  <script type="module">
+    // Bootstrap the cross-origin-isolated Emscripten module.
+    try {
+      window.thermion_dart = await thermion_dart();
+    } catch (err) {
+      const el = document.getElementById('error');
+      el.textContent = 'Failed to load thermion_dart.js: ' + err +
+        '\n\nThis page requires cross-origin isolation (COOP/COEP).';
+      el.style.display = 'block';
+      throw err;
+    }
+    // Boot the Dart WASM entry (compiled from web/main.dart).
+    try {
+      const dartModulePromise = WebAssembly.compileStreaming(fetch('./main.wasm'));
+      const dart2wasm_runtime = await import('./main.mjs');
+      const moduleInstance = await dart2wasm_runtime.instantiate(dartModulePromise, {});
+      await dart2wasm_runtime.invoke(moduleInstance);
+    } catch (jsErr) {
+      const el = document.getElementById('error');
+      if (el) { el.textContent = 'Failed to boot: ' + jsErr; el.style.display = 'block'; }
+      throw jsErr;
+    }
+  </script>
+</body>
+</html>

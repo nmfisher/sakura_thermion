@@ -1,0 +1,16 @@
+# Build artifacts — produced by `dart compile wasm` + downloaded by the
+# thermion_dart build hook. Do not commit.
+web/main.wasm
+web/main.mjs
+web/main.mjs.deps
+web/main.mjs.map
+web/main.wasm.map
+web/thermion_dart.js
+web/thermion_dart.wasm
+web/main.support.js
+.dart_tool/
+build/
+tool/render/node_modules/
+
+__pycache__/
+*.pyc

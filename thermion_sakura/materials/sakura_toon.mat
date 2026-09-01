@@ -1,0 +1,45 @@
+material {
+    name : SakuraToon,
+    // COLOR0.rgb = base (pre-sRGB-decoded)  COLOR0.a = state (0=lit, 0.5=shadow, 1=unlit)
+    requires : [ position, color ],
+    shadingModel : unlit,
+    blending : opaque, culling : none, depthWrite : true, depthCulling : true,
+    vertexDomain : object,
+    parameters : [
+        { type : float3, name : sunDir },
+        { type : float3, name : sunColor },
+        { type : float3, name : fillDir },
+        { type : float3, name : fillColor },
+        { type : float3, name : hemiSky },
+        { type : float3, name : hemiGround },
+        { type : float3, name : tint },
+        { type : float, name : globalGain }
+    ]
+}
+fragment {
+    float ramp(float dotNL) {
+        float u = clamp(dotNL * 0.5 + 0.5, 0.0, 1.0);
+        float r[3] = float[3](0.360, 0.698, 1.0);
+        return r[int(clamp(floor(u * 3.0), 0.0, 2.0))];
+    }
+    void material(inout MaterialInputs m) {
+        prepareMaterial(m);
+        vec4 c0 = getColor();
+        vec3 base = c0.rgb;
+        float a = c0.a;
+        if (a > 0.85) { m.baseColor = vec4(base, 1.0); return; } // unlit
+        bool shadowed = a > 0.5;
+        vec3 wp = getWorldPosition().xyz;
+        vec3 n = normalize(cross(dFdx(wp), dFdy(wp)));
+        if (!gl_FrontFacing) n = -n;
+        float key = shadowed ? 0.0 : ramp(dot(n, materialParams.sunDir));
+        float fil = ramp(dot(n, materialParams.fillDir));
+        vec3 outc = vec3(0.0);
+        outc += base * key * mix(materialParams.tint, vec3(1.0), key) * materialParams.sunColor;
+        outc += base * fil * mix(materialParams.tint, vec3(1.0), fil) * materialParams.fillColor;
+        float h = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+        outc += base * mix(materialParams.hemiGround, materialParams.hemiSky, h);
+        outc *= materialParams.globalGain;
+        m.baseColor = vec4(outc, 1.0);
+    }
+}

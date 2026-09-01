@@ -1,0 +1,9 @@
+.dart_tool/
+**/.dart_tool/
+**/build/
+**/.flutter-plugins-dependencies
+**/*.filamat
+**/pubspec.lock
+.DS_Store
+.idea/
+**/*.iml

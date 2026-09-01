@@ -1,0 +1,49 @@
+{
+  "width": 1600,
+  "height": 900,
+  "views": [
+    {
+      "name": "rail_station_signs",
+      "description": "Object-coverage camera for the east station board and fence warning plate",
+      "px": 33.5,
+      "pz": 4.5,
+      "eye": 1.62,
+      "yaw": 0.0,
+      "pitch": 0.04,
+      "renderer_args": ["--all-shadows"]
+    },
+    {
+      "name": "rail_warning_plate",
+      "description": "Isolated station back-fence warning plate with the animated train moved out of frame",
+      "px": 24.0,
+      "pz": -9.0,
+      "eye": 1.62,
+      "yaw": 3.141592653589793,
+      "pitch": 0.0,
+      "train_x": 100.0,
+      "renderer_args": ["--all-shadows", "--train-x=100"]
+    },
+    {
+      "name": "train_cab_decals",
+      "description": "Object-coverage camera square to the opening-frame cab destination face",
+      "px": -5.0,
+      "pz": 0.0,
+      "eye": 1.62,
+      "yaw": 1.5707963267948966,
+      "pitch": 0.32,
+      "only_train_car": 0,
+      "renderer_args": ["--only-train-car=0"]
+    },
+    {
+      "name": "train_car_number",
+      "description": "Isolated source car side view centred on the authored car-number plate",
+      "px": -11.4,
+      "pz": 4.5,
+      "eye": 1.62,
+      "yaw": 0.0,
+      "pitch": -0.03,
+      "only_train_car": 0,
+      "renderer_args": ["--only-train-car=0"]
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+material {
+    name : SakuraShadowReceiver,
+    shadingModel : unlit,
+    shadowMultiplier : true,
+    blending : transparent,
+    culling : none,
+    depthWrite : false,
+    depthCulling : true,
+    vertexDomain : object
+}
+fragment {
+    void material(inout MaterialInputs m) {
+        prepareMaterial(m);
+        // Filament modulates this transparent layer from invisible in light to
+        // translucent black under the native directional shadow map.
+        m.baseColor = vec4(0.0, 0.0, 0.0, 0.22);
+    }
+}

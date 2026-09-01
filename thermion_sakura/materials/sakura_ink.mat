@@ -1,0 +1,66 @@
+material {
+    name : SakuraInk,
+    variables : [ screenUV ],
+    parameters : [
+        { type : sampler2d, name : tDiffuse },
+        { type : sampler2d, name : tDepth },
+        { type : float2, name : texelSize },
+        { type : float, name : uNear, default : 0.25 },
+        { type : float, name : uFar, default : 600.0 },
+        { type : float3, name : uInk },
+        { type : float, name : uThickness, default : 1.6 },
+        { type : float, name : uSens, default : 0.0042 },
+        { type : float, name : uConcave, default : 0.026 },
+        { type : float, name : uConcaveAmount, default : 0.42 },
+        { type : float, name : uFadeStart, default : 40.0 },
+        { type : float, name : uFadeEnd, default : 98.0 },
+        { type : float, name : uSkyDepth, default : 420.0 }
+    ],
+    shadingModel : unlit, blending : opaque, depthWrite : false, depthCulling : false,
+    culling : none, vertexDomain : device
+}
+vertex { void materialVertex(inout MaterialVertexInputs m) { m.screenUV.st = getPosition().xy * 0.5 + 0.5; } }
+fragment {
+    // Positive view-space distance from a Filament reverse-Z depth sample
+    // (1 = near, 0 = far):  Z = n*f / (n + d*(f-n)).
+    float viewZ(float d, float n, float f) {
+        return (n * f) / (n + d * (f - n));
+    }
+    void material(inout MaterialInputs m) {
+        prepareMaterial(m);
+        vec2 uv = uvToRenderTargetUV(variable_screenUV.st);
+        float n = materialParams.uNear;
+        float f = materialParams.uFar;
+
+        vec3 col = texture(materialParams_tDiffuse, uv).rgb;
+        float dc = viewZ(texture(materialParams_tDepth, uv).x, n, f);
+
+        if (dc > materialParams.uSkyDepth) {
+            m.baseColor = vec4(col, 1.0);
+            return;
+        }
+
+        vec2 t = materialParams.texelSize * materialParams.uThickness;
+        float dl = viewZ(texture(materialParams_tDepth, uv - vec2(t.x, 0.0)).x, n, f);
+        float dr = viewZ(texture(materialParams_tDepth, uv + vec2(t.x, 0.0)).x, n, f);
+        float du = viewZ(texture(materialParams_tDepth, uv + vec2(0.0, t.y)).x, n, f);
+        float dd = viewZ(texture(materialParams_tDepth, uv - vec2(0.0, t.y)).x, n, f);
+
+        // second difference of linear depth, normalised by distance
+        float sx = (dl + dr - 2.0 * dc) / dc;
+        float sy = (du + dd - 2.0 * dc) / dc;
+
+        float convex  = max(0.0,  sx) + max(0.0,  sy);
+        float concave = max(0.0, -sx) + max(0.0, -sy);
+
+        float edge = smoothstep(materialParams.uSens * 0.32, materialParams.uSens, convex);
+        edge = max(edge, smoothstep(materialParams.uConcave, materialParams.uConcave * 3.4, concave) * materialParams.uConcaveAmount);
+
+        // let the background dissolve into the haze instead of getting busy
+        edge *= 1.0 - smoothstep(materialParams.uFadeStart, materialParams.uFadeEnd, dc);
+
+        // ink keeps a whisper of the underlying hue so it never looks pasted on
+        vec3 line = mix(materialParams.uInk, col * 0.42, 0.22);
+        m.baseColor = vec4(mix(col, line, clamp(edge, 0.0, 1.0)), 1.0);
+    }
+}

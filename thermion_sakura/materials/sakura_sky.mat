@@ -1,0 +1,18 @@
+material {
+    name : SakuraSky,
+    requires : [ position, color ],
+    shadingModel : unlit,
+    culling : none,
+    depthWrite : true,
+    depthCulling : true,
+    blending : opaque,
+    vertexDomain : object
+}
+fragment {
+    void material(inout MaterialInputs material) {
+        prepareMaterial(material);
+        // The custom post pass reserves scene alpha for encoded reverse view
+        // depth. Zero is its explicit far-sky sentinel.
+        material.baseColor = vec4(getColor().rgb, 0.0);
+    }
+}

@@ -1,0 +1,16 @@
+material {
+    name : SakuraVColor,
+    requires : [ position, color ],
+    shadingModel : unlit,
+    culling : none,
+    depthWrite : true,
+    depthCulling : true,
+    blending : opaque,
+    vertexDomain: object
+}
+fragment {
+    void material(inout MaterialInputs material) {
+        prepareMaterial(material);
+        material.baseColor = getColor();
+    }
+}

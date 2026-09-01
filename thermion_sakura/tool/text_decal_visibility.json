@@ -1,0 +1,188 @@
+{
+  "schema": 1,
+  "purpose": "Rendered-visibility ledger for authored text, signs, plates, posters, and mapped decals. An item is complete only when its source pixels and face orientation are present in a representative Thermion render.",
+  "states": ["complete", "partial", "missing", "unverified"],
+  "items": [
+    {
+      "id": "yonchome.hall.name",
+      "source": "textures.js::hallPlate()",
+      "thermion": "sign_atlas.dart::hallPlateRegion",
+      "view": "yonchome_hall",
+      "crop": [890, 240, 1160, 370],
+      "expectedText": "ひばり台町内会館 / HIBARIDAI COMMUNITY HALL",
+      "state": "complete"
+    },
+    {
+      "id": "yonchome.hall.notice",
+      "source": "textures.js::hallNotice(0)",
+      "thermion": "sign_atlas.dart::hallNoticeRegion",
+      "view": "yonchome_hall",
+      "crop": [515, 370, 710, 565],
+      "expectedText": "お知らせ / 町内清掃",
+      "state": "complete"
+    },
+    {
+      "id": "yonchome.refuse.plate",
+      "source": "textures.js::gomiPlate(0)",
+      "thermion": "sign_atlas.dart::gomiPlateRegion",
+      "view": "yonchome_hall",
+      "crop": [775, 665, 895, 810],
+      "expectedText": "ごみ集積所",
+      "state": "complete"
+    },
+    {
+      "id": "yonchome.scooter.plate",
+      "source": "streetprops.js::makeScooter -> textures.js::platePlate()",
+      "thermion": "details.dart::makeEbike -> sign_atlas.dart::scooterPlateRegion",
+      "view": "yonchome_hall",
+      "crop": [1280, 630, 1490, 780],
+      "expectedText": "さ 21-08",
+      "state": "complete",
+      "notes": "Mapped on local -X face with flipped atlas U to match BoxGeometry material face orientation. Partially occluded by the refuse gate as in the reference."
+    },
+    {
+      "id": "railway.crossing.sign",
+      "source": "railway.js::makeCrossing -> textures.js::crossingSign()",
+      "thermion": "railway.dart::_buildCrossing -> sign_atlas.dart::crossingSignRegion",
+      "view": "crossing_spawn",
+      "crop": [1125, 275, 1260, 375],
+      "expectedText": "踏切注意 / とまれ みよ きけ",
+      "state": "complete"
+    },
+    {
+      "id": "railway.station.sign",
+      "source": "railway.js -> textures.js::stationSign()",
+      "thermion": "railway.dart::_buildStation -> sign_atlas.dart::stationSignRegion",
+      "view": "rail_station_signs",
+      "crop": [640, 225, 960, 335],
+      "expectedText": "ひばり台 / HIBARIDAI",
+      "state": "complete",
+      "notes": "Exact Canvas2D source replaces the former geometric pixel-text approximation."
+    },
+    {
+      "id": "railway.warning.plate",
+      "source": "railway.js -> textures.js::warningPlate(1)",
+      "thermion": "railway.dart::_buildStation -> sign_atlas.dart::railwayWarningRegion",
+      "view": "rail_warning_plate",
+      "crop": [735, 225, 870, 475],
+      "expectedText": "立入禁止",
+      "state": "complete",
+      "notes": "Coverage view moves the animated train to x=100 in both renderers to isolate the fence plate."
+    },
+    {
+      "id": "train.destination",
+      "source": "train.js -> textures.js::trainDest()",
+      "thermion": "train.dart::buildTrain -> sign_atlas.dart::trainDestinationRegion",
+      "view": "train_cab_decals",
+      "crop": [630, 365, 970, 470],
+      "expectedText": "各停 / ひばり台",
+      "state": "complete",
+      "notes": "Isolated source car 0 in both renderers. Full-frame isolated fidelity 92.61; preserving UVs through the train's final x offset fixed the formerly blank face."
+    },
+    {
+      "id": "train.car_number",
+      "source": "train.js -> textures.js::trainNumber()",
+      "thermion": "train.dart::buildTrain -> sign_atlas.dart::trainNumberRegion",
+      "view": "train_car_number",
+      "crop": [645, 440, 950, 555],
+      "expectedText": "クハ 2104",
+      "state": "complete",
+      "notes": "Isolated source car 0 in both renderers. Full-frame isolated fidelity 92.27; UV-preserving train offset also repaired this face."
+    },
+    {
+      "id": "utility_pole.warning",
+      "source": "makePole -> textures.js::warningPlate(variant)",
+      "thermion": "make_pole.dart::makePole",
+      "state": "missing"
+    },
+    {
+      "id": "nanachome.supermarket.fascia",
+      "source": "nanachome.js::buildFrontage -> textures.js::superFascia()",
+      "thermion": "nanachome.dart::_store -> sign_atlas.dart::superFasciaRegion",
+      "view": "nanachome_store",
+      "crop": [205, 20, 1370, 195],
+      "expectedText": "スーパー さかえ / 生鮮食品・惣菜・日用品 / SAKAE FOOD MARKET",
+      "state": "complete",
+      "notes": "Ranked source object world[9]/Mesh[3427], 144092 visible pixels; exact 2048x256 Canvas2D artwork replaces geometric placeholder lettering."
+    },
+    {
+      "id": "nanachome.supermarket.window_interiors",
+      "source": "nanachome.js::buildFrontage -> textures.js::superInterior(2,1)",
+      "thermion": "nanachome.dart::_store -> sign_atlas.dart::superInteriorCheckoutRegion/superInteriorChillerRegion",
+      "view": "nanachome_store",
+      "crop": [20, 260, 1570, 610],
+      "expectedText": "日配 / 青果 / 鮮魚 / 惣菜",
+      "state": "partial",
+      "notes": "Exact artwork and readable aisle labels are present. The source's separate 42%-alpha cel glass is currently pre-composited over the canvases, so transparency-layer parity remains open."
+    },
+    {
+      "id": "nanachome.supermarket.banners",
+      "source": "nanachome.js::buildFrontage -> textures.js::superBanner(0,1,2)",
+      "thermion": "nanachome.dart::_store -> sign_atlas.dart::superBanner*Region",
+      "view": "nanachome_store",
+      "crop": [0, 225, 1600, 340],
+      "expectedText": "本日 特価 市 / あさどれ 野菜 入荷 / ポイント ２倍 デー",
+      "state": "complete",
+      "notes": "Exact double-sided 1024x192 source canvases replace block-glyph approximations."
+    },
+    {
+      "id": "onsen.frontage.fascias",
+      "source": "onsen.js::buildOnsenUnit -> textures.js::onsenFascia(kind)",
+      "thermion": "onsen.dart::_buildUnit -> sign_atlas.dart::onsenFascia*Region",
+      "view": "onsen_street",
+      "crop": [300, 0, 1600, 360],
+      "expectedText": "湯乃屋 / 蓬莱湯 / さくら庵 / ゆのか / こけし堂",
+      "state": "complete",
+      "notes": "All five exact 1024x220 source canvases replace geometric block-letter approximations. The ranked kokeshi fascia alone accounts for 25170 visible reference pixels."
+    },
+    {
+      "id": "onsen.frontage.blades",
+      "source": "onsen.js::buildOnsenUnit -> textures.js::onsenBlade(kind)",
+      "thermion": "onsen.dart::_buildUnit -> sign_atlas.dart::onsenBlade*Region",
+      "view": "onsen_street",
+      "crop": [480, 250, 1080, 570],
+      "expectedText": "さくら庵 / ゆのか / こけし堂",
+      "state": "complete",
+      "notes": "Exact timber grain and vertical source typography are mapped on both +/-X faces; UVs are preserved through each unit's world transform."
+    },
+    {
+      "id": "onsen.frontage.noren",
+      "source": "onsen.js::buildOnsenUnit -> textures.js::onsenNoren(kind)",
+      "thermion": "onsen.dart::_buildUnit -> sign_atlas.dart::onsenNoren*Region",
+      "view": "onsen_street",
+      "crop": [390, 330, 1180, 510],
+      "expectedText": "湯乃屋 / 甘味 / 珈琲",
+      "state": "complete",
+      "notes": "Exact transparent three-panel source canvases replace opaque block cloth and pixel glyphs."
+    },
+    {
+      "id": "onsen.frontage.tatami_rooms",
+      "source": "onsen.js::buildOnsenUnit -> textures.js::tatamiRoom(0,1)",
+      "thermion": "onsen.dart::_buildUnit -> sign_atlas.dart::tatamiRoom*Region",
+      "view": "onsen_street",
+      "crop": [300, 0, 1230, 650],
+      "state": "partial",
+      "notes": "Exact source room canvases now fill the ground doorway and upper windows. The source's separate transparent glass layer is not yet reproduced, so glazing parity remains open."
+    },
+    {
+      "id": "rokuchome.shop.fascias",
+      "source": "shops.js::makeShop -> textures.js::shopFascia(bento,zakka)",
+      "thermion": "rokuchome.dart::_shop -> sign_atlas.dart::shopFasciaBentoRegion/shopFasciaZakkaRegion",
+      "view": "rokuchome_turnaround",
+      "crop": [0, 0, 575, 315],
+      "expectedText": "お弁当 のはら / NOHARA / 雑貨 まるみ / MARUMI",
+      "state": "complete",
+      "notes": "Exact source canvases replace geometric pixel text for 41158 ranked visible pixels. View fidelity rose from 67.27 to 68.13."
+    },
+    {
+      "id": "onsen.paper_lanterns",
+      "source": "onsen.js::makeOnsenLantern -> textures.js::onsenLanternTex(0,1,2)",
+      "thermion": "onsen.dart::buildOnsen -> sign_atlas.dart::appendSignAtlasCylinder",
+      "view": "onsen_street",
+      "crop": [150, 70, 1260, 360],
+      "expectedText": "湯 / 湯の坂 / 蓬莱湯",
+      "state": "complete",
+      "notes": "The nine eave-run lanterns and four frontage/bracket lanterns use exact ribbed 256x256 source canvases on open 12-sided cylinders with source variants and placements."
+    }
+  ]
+}

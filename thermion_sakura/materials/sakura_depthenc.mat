@@ -1,0 +1,29 @@
+material {
+    name : SakuraDepthEnc,
+    requires : [ position ],
+    shadingModel : unlit,
+    depthWrite : true,
+    depthCulling : true,
+    blending : opaque,
+    culling : none,
+    vertexDomain : object,
+    variables : [ clipPosition ]
+}
+vertex {
+    void materialVertex(inout MaterialVertexInputs m) {
+        vec4 worldPosition = getWorldFromModelMatrix() * getPosition();
+        m.clipPosition = getClipFromWorldMatrix() * worldPosition;
+    }
+}
+fragment {
+    void material(inout MaterialInputs m) {
+        prepareMaterial(m);
+        // gl_FragCoord.z is unavailable in Filament's unlit material path on
+        // llvmpipe. Interpolate the light-camera clip position instead. The
+        // getClipFromWorldMatrix exposes conventional clip coordinates even
+        // when Filament's hardware depth buffer is reverse-Z: near NDC +1.
+        float ndcZ = variable_clipPosition.z / variable_clipPosition.w;
+        float depth = 0.5 + 0.5 * ndcZ;
+        m.baseColor = vec4(depth, 0.0, 0.0, 1.0);
+    }
+}

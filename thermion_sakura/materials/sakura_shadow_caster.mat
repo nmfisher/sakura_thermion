@@ -1,0 +1,15 @@
+material {
+    name : SakuraShadowCaster,
+    shadingModel : unlit,
+    colorWrite : false,
+    depthWrite : false,
+    depthCulling : true,
+    culling : none,
+    vertexDomain : object
+}
+fragment {
+    void material(inout MaterialInputs m) {
+        prepareMaterial(m);
+        m.baseColor = vec4(1.0);
+    }
+}

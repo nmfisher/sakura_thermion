@@ -1,0 +1,202 @@
+material {
+    name : SakuraToonRT,
+    // Realtime cel path. COLOR0.rgb = raw LINEAR albedo; COLOR0.a packs face
+    // state, ramp id, and atlas state into an exact small integer. Cel
+    // reproduces cel.dart: sun + fill + bounce + hemisphere, each quantised
+    // through its authored ramp, with dark bands tinted cool. Line work is
+    // applied once, in sakura_post's depth second-difference pass.
+    requires : [ position, tangents, color, uv0, uv1, custom0 ],
+    shadingModel : unlit,
+    blending : opaque,
+    culling : back,
+    depthWrite : true,
+    depthCulling : true,
+    vertexDomain : object,
+    variables : [ materialPayload ],
+    parameters : [
+        { type : float3, name : sunDir },
+        { type : float3, name : sunColorI },
+        { type : float3, name : fillDir },
+        { type : float3, name : fillColorI },
+        { type : float3, name : bounceDir },
+        { type : float3, name : bounceColorI },
+        { type : float3, name : hemiSkyI },
+        { type : float3, name : hemiGroundI },
+        { type : float3, name : tint },
+        { type : float,  name : globalGain },
+        { type : sampler2d, name : albedoAtlas },
+        { type : sampler2d, name : atlasMetadata },
+        { type : sampler2d, name : shadowMap },
+        { type : mat4, name : sunLightVP },
+        { type : float, name : shadowBias },
+        { type : float, name : shadowStrength },
+        { type : float, name : shadowEnabled },
+        { type : float, name : shadowDebug },
+        { type : float,  name : cameraNear },
+        { type : float,  name : encodeDepth },
+        { type : float3, name : fogColor },
+        { type : float,  name : fogNear },
+        { type : float,  name : fogFar }
+    ]
+}
+vertex {
+    void materialVertex(inout MaterialVertexInputs m) {
+        m.materialPayload = getCustom0();
+    }
+}
+fragment {
+    // Per-material gradient ramp, selected by rampId (packed in COLOR0.a). Mirrors
+    // cel.dart RAMPS: 0=3-band, 1=soft, 2=2-band, 3=4-band, 4=5-band, 5=soft3.
+    // Nearest-filtered: dotNL*0.5+0.5 -> [0,1], floor(u*N) picks the band.
+    float rampFor(float id, float dotNL) {
+        float u = clamp(dotNL * 0.5 + 0.5, 0.0, 1.0);
+        float r3    = u < 0.3333 ? 0.36078 : (u < 0.6667 ? 0.69804 : 1.0);
+        float rSoft = u < 0.5    ? 0.70588 : 1.0;
+        float r2    = u < 0.5    ? 0.37647 : 1.0;
+        float r4    = u < 0.25 ? 0.31373 : (u < 0.5 ? 0.55686 : (u < 0.75 ? 0.79216 : 1.0));
+        float r5    = u < 0.2 ? 0.2902 : (u < 0.4 ? 0.48627 : (u < 0.6 ? 0.67451 : (u < 0.8 ? 0.83922 : 1.0)));
+        float rSoft3 = u < 0.3333 ? 0.67451 : (u < 0.6667 ? 0.83922 : 1.0);
+        if (id < 0.5) return r3;
+        if (id < 1.5) return rSoft;
+        if (id < 2.5) return r2;
+        if (id < 3.5) return r4;
+        if (id < 4.5) return r5;
+        return rSoft3;
+    }
+    // base * band * mix(tint,1,band) * lightColorI  (dark bands go violet)
+    vec3 addLight(vec3 base, float b, vec3 colorI, vec3 tint) {
+        vec3 mx = tint * (1.0 - b) + b;
+        return base * b * mx * colorI;
+    }
+    vec3 applyLinearFog(vec3 color, float viewZ) {
+        float fogFactor = smoothstep(materialParams.fogNear,
+                                     materialParams.fogFar, viewZ);
+        return mix(color, materialParams.fogColor, fogFactor);
+    }
+    float sunVisibility(vec3 wp, vec3 normal) {
+        if (materialParams.shadowEnabled < 0.5) return 1.0;
+        // Match THREE.DirectionalLightShadow.normalBias: move the receiver
+        // away from its surface before projecting into light space.
+        vec4 clip = materialParams.sunLightVP * vec4(wp + normal * 0.035, 1.0);
+        vec3 ndc = clip.xyz / max(abs(clip.w), 1e-6);
+        vec2 suv = ndc.xy * 0.5 + 0.5;
+        if (any(lessThan(suv, vec2(0.0))) ||
+            any(greaterThan(suv, vec2(1.0)))) return 1.0;
+        // getClipFromWorldMatrix exposes conventional clip coordinates even
+        // though Filament's hardware depth buffer itself is reverse-Z.
+        float receiverDepth = 0.5 + ndc.z * 0.5;
+        // Filament's OpenGL offscreen colour attachment is sampled with the
+        // opposite Y origin from the light camera's clip coordinates.
+        vec2 sampleUv = vec2(suv.x, 1.0 - suv.y);
+        float casterDepth = texture(materialParams_shadowMap, sampleUv).r;
+        float visibility = casterDepth > receiverDepth + materialParams.shadowBias
+            ? 0.0 : 1.0;
+        return mix(1.0, visibility, materialParams.shadowStrength);
+    }
+    void material(inout MaterialInputs m) {
+        prepareMaterial(m);
+        vec4 c0 = getColor();
+        bool noOutline = c0.a < 0.0;
+        float metadata = max(abs(c0.a) - 1.0, 0.0);
+        bool sourceMapped = metadata >= 56.0;
+        bool mapped = sourceMapped || metadata >= 28.0;
+        float metadataIndex = 0.0;
+        if (sourceMapped) {
+            metadata -= 56.0;
+            metadataIndex = floor(metadata / 28.0);
+            metadata -= metadataIndex * 28.0;
+        }
+        else if (mapped) metadata -= 28.0;
+        float rampId = floor(metadata / 4.0);
+        float stateCode = metadata - rampId * 4.0;
+        float faceState = stateCode > 2.5 ? 1.0
+            : (stateCode > 1.5 ? 0.75 : (stateCode > 0.5 ? 0.5 : 0.0));
+        vec4 payload = variable_materialPayload;
+        vec2 atlasUv = getUV1();
+        if (sourceMapped) {
+            vec4 region = texelFetch(materialParams_atlasMetadata,
+                ivec2(int(metadataIndex), 0), 0);
+            vec2 encodedOrigin = region.xy;
+            float wrapS = floor(encodedOrigin.x + 0.00001);
+            float yCode = floor(encodedOrigin.y + 0.00001);
+            float wrapT = mod(yCode, 4.0);
+            float flipY = floor(yCode / 4.0);
+            vec2 origin = fract(encodedOrigin);
+            vec2 tuv = getUV1();
+            if (wrapS < 0.5) tuv.x = clamp(tuv.x, 0.0, 1.0);
+            else if (wrapS < 1.5) tuv.x = fract(tuv.x);
+            else {
+                float whole = floor(tuv.x);
+                float part = tuv.x - whole;
+                tuv.x = mod(abs(whole), 2.0) < 1.0 ? part : 1.0 - part;
+            }
+            if (wrapT < 0.5) tuv.y = clamp(tuv.y, 0.0, 1.0);
+            else if (wrapT < 1.5) tuv.y = fract(tuv.y);
+            else {
+                float whole = floor(tuv.y);
+                float part = tuv.y - whole;
+                tuv.y = mod(abs(whole), 2.0) < 1.0 ? part : 1.0 - part;
+            }
+            if (flipY > 0.5) tuv.y = 1.0 - tuv.y;
+            atlasUv = vec2(origin.x + tuv.x * region.z,
+                           1.0 - origin.y - tuv.y * region.w);
+        }
+        vec4 texel = mapped
+            ? texture(materialParams_albedoAtlas, atlasUv)
+            : vec4(1.0);
+        // Canvas decals and foliage use transparent texels for their cutout.
+        // The output alpha channel is reserved for encoded view depth, so
+        // preserve these masks with discard rather than framebuffer blending.
+        if (materialParams.shadowDebug > 1.5) {
+            m.baseColor = vec4(mapped ? texel.rgb : vec3(0.0), 1.0);
+            return;
+        }
+        if (mapped && texel.a < 0.01) discard;
+        vec3 base = c0.rgb * texel.rgb;
+        vec3 tint = payload.rgb;
+        vec3 wp = getWorldPosition().xyz;
+        vec4 viewPos = getViewFromWorldMatrix() * vec4(wp, 1.0);
+        float viewZ = max(-viewPos.z, materialParams.cameraNear);
+        float encodedDepth = materialParams.cameraNear / viewZ;
+        float outputAlpha = mix(1.0, encodedDepth, materialParams.encodeDepth);
+        if (noOutline) outputAlpha = -outputAlpha;
+        // COLOR0.a metadata decodes to the original face state:
+        //   1.0 = unlit accent  -> pass raw linear colour through verbatim
+        //   0.5 = lit face in cast shadow (CPU SunShadowMap) -> drop the sun
+        //   0.0 = lit & sunlit
+        if (faceState > 0.85) {
+            m.baseColor = vec4(applyLinearFog(base, viewZ), outputAlpha);
+            return;
+        }
+        float vis = (faceState > 0.25 && faceState < 0.65) ? 0.0 : 1.0;
+
+        // Thermion converts the supplied normal attribute to a tangent frame;
+        // UV0 is therefore free for the authored texture atlas.
+        vec3 n = normalize(getWorldNormalVector());
+        // Soft-ramp blossom canopies intentionally do not receive shadows.
+        if (faceState < 0.65) {
+            vis *= sunVisibility(wp, n);
+        }
+        if (materialParams.shadowDebug > 0.5) {
+            m.baseColor = vec4(vec3(vis), outputAlpha);
+            return;
+        }
+
+        float key = rampFor(rampId, dot(n, materialParams.sunDir));
+        float fil = rampFor(rampId, dot(n, materialParams.fillDir));
+        float bnc = rampFor(rampId, dot(n, materialParams.bounceDir));
+        key *= vis;
+
+        vec3 outc = vec3(0.0);
+        outc += addLight(base, key, materialParams.sunColorI, tint);
+        outc += addLight(base, fil, materialParams.fillColorI, tint);
+        outc += addLight(base, bnc, materialParams.bounceColorI, tint);
+
+        float h = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+        outc += base * mix(materialParams.hemiGroundI, materialParams.hemiSkyI, h);
+
+        outc *= materialParams.globalGain;
+        outc = applyLinearFog(outc, viewZ);
+        m.baseColor = vec4(outc, outputAlpha);
+    }
+}

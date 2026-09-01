@@ -1,0 +1,26 @@
+material {
+    name : SakuraLit,
+    // Realtime lit path: vertex COLOR carries raw LINEAR albedo (no baked
+    // cel/shadow), Filament shades it Lambert (roughness 1, metallic 0 — the
+    // reference's MeshToonMaterial is a pure diffuse BRDF) under the realtime
+    // sun + IBL, with native shadow maps.
+    requires : [ position, tangents, color ],
+    shadingModel : lit,
+    blending : opaque,
+    culling : none,
+    depthWrite : true,
+    depthCulling : true,
+    vertexDomain : object,
+    parameters : [
+        { type : float, name : roughness },
+        { type : float, name : metallic }
+    ]
+}
+fragment {
+    void material(inout MaterialInputs m) {
+        prepareMaterial(m);
+        m.baseColor = getColor();
+        m.roughness = 1.0;
+        m.metallic = 0.0;
+    }
+}
