@@ -286,6 +286,89 @@ class _FallingPetal {
   final Vector3 spin;
 }
 
+/// Mutable port of `petals.js::buildPetals` for realtime hosts.
+///
+/// Geometry remains a single triangle soup; callers can upload [positions]
+/// into its writable position buffer after each [update].
+class FallingPetalSimulation {
+  FallingPetalSimulation() : _rng = RngKit(8123) {
+    const count = 980;
+    final counts = [
+      (count * .55).round(),
+      (count * .28).round(),
+      count - (count * .55).round() - (count * .28).round(),
+    ];
+    final mats = [_petalMat, _blossomLightMat, _petalDeepMat];
+    for (var group = 0; group < counts.length; group++) {
+      for (var i = 0; i < counts[group]; i++) {
+        _petals.add(_FallingPetal(
+          mat: mats[group],
+          x: _rng.range(-_half, _half),
+          y: _rng.range(.2, _top),
+          z: _rng.range(_z0, _z1),
+          fall: _rng.range(.42, .86),
+          swayAmp: _rng.range(.25, .75),
+          swayFreq: _rng.range(.5, 1.35),
+          phase: _rng.range(0, 10),
+          spin: Vector3(_rng.range(-1, 1), _rng.range(-1, 1), _rng.range(-1, 1))
+            ..normalize(),
+          spinRate: _rng.range(.5, 2.4),
+          angle: _rng.range(0, 6.28),
+          scale: _rng.range(.78, 1.25),
+          drift: _rng.range(-.16, .16),
+        ));
+      }
+    }
+    for (var i = 0; i < 40; i++) {
+      update(.1, 0, 1);
+    }
+  }
+
+  static const _top = 6.8, _z0 = -30.0, _z1 = 34.0, _half = 9.5;
+  final RngKit _rng;
+  final List<_FallingPetal> _petals = [];
+  final ThreeGeom _geometry = _petalGeometry(.185, .135);
+  double _time = 0;
+
+  void update(double dt, double gust, double gustDir) {
+    _time += dt;
+    final wind = gust * 5.4 * gustDir;
+    final lift = gust * 1.5;
+    for (final p in _petals) {
+      final sway = math.sin(_time * p.swayFreq + p.phase);
+      final flutter = math.sin(_time * p.swayFreq * 2.7 + p.phase * 1.7);
+      p.y -= (p.fall + gust * .4) * dt;
+      p.x += (p.swayAmp * sway * .55 + p.drift + wind * .24) * dt;
+      p.z += (p.swayAmp * flutter * .32 + wind * .05) * dt;
+      p.y += lift * math.max(0, 1 - p.z.abs() / 8) * dt;
+      p.angle += p.spinRate * dt * (1 + gust);
+
+      final cx = centerX(p.z);
+      if (p.x < cx - _half) p.x = cx + _half;
+      if (p.x > cx + _half) p.x = cx - _half;
+      if (p.z < _z0) p.z = _z1;
+      if (p.z > _z1) p.z = _z0;
+      if (p.y < groundY(p.z) + .04) {
+        p
+          ..x = _rng.range(-_half, _half)
+          ..z = _rng.range(_z0, _z1)
+          ..y = _top + _rng.range(0, 1.4)
+          ..phase = _rng.range(0, 10);
+      }
+    }
+  }
+
+  List<Tri> triangles() => bake([
+        for (final p in _petals)
+          Part(
+            _geometry,
+            composePRS(Vector3(p.x, p.y, p.z),
+                Quaternion.axisAngle(p.spin, p.angle), Vector3.all(p.scale)),
+            p.mat,
+          ),
+      ]);
+}
+
 // ── Public entry point ────────────────────────────────────────────────────
 
 /// Build all blossom petals (fallen + falling initial placement).

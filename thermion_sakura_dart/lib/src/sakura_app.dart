@@ -929,19 +929,21 @@ Future<Uint8List> _loadPackageAsset(
 
 class _SakuraRuntime {
   _SakuraRuntime._(this.viewer, this.camera, this.train, this.booms, this.lamps,
-      this.petalGroups, this.groundedCamera);
+      this.petals, this.petalBuffer, this.groundedCamera);
 
   final ThermionViewerFFI viewer;
   final Camera camera;
   final ThermionAsset? train;
   final List<ThermionAsset> booms;
   final List<_CrossingLamp> lamps;
-  final List<ThermionAsset> petalGroups;
+  final FallingPetalSimulation? petals;
+  final VertexBuffer? petalBuffer;
   final bool groundedCamera;
   final Stopwatch _clock = Stopwatch();
   double _trainX = .392;
   double _armT = 0;
   double _time = 0;
+  double _gust = 0;
   double _lastSeconds = 0;
   bool paused = false;
   bool _updating = false;
@@ -959,7 +961,8 @@ class _SakuraRuntime {
     ThermionAsset? train;
     final booms = <ThermionAsset>[];
     final lamps = <_CrossingLamp>[];
-    final petals = <ThermionAsset>[];
+    FallingPetalSimulation? petals;
+    VertexBuffer? petalBuffer;
 
     Future<ThermionAsset> add(List<Tri> tris, {bool casts = false}) async {
       final packed = trisToPacked(tris);
@@ -980,16 +983,15 @@ class _SakuraRuntime {
       if (animateTrain) {
         // The source bends the full train onto the equator once, then advances
         // it by rotating that curved mesh about the planet's Z axis.
-        train =
-            await add(
-                wrapOnPlanet(
-                    buildTrain(
-                        x: 0,
-                        bodyColor: 0xebe3d5,
-                        stripeColor: 0x0771c1,
-                        windowColor: 0x3b4257),
-                    maxEdge: 4),
-                casts: true);
+        train = await add(
+            wrapOnPlanet(
+                buildTrain(
+                    x: 0,
+                    bodyColor: 0xebe3d5,
+                    stripeColor: 0x0771c1,
+                    windowColor: 0x3b4257),
+                maxEdge: 4),
+            casts: true);
       }
       if (animateBooms) {
         final boom = buildCrossingBoom(gateYellowColor: 0xf2b727);
@@ -1018,14 +1020,18 @@ class _SakuraRuntime {
         }
       }
       if (animatePetals) {
-        for (var group = 0; group < 8; group++) {
-          petals.add(await add(buildFallingPetalGroup(group)));
+        petals = FallingPetalSimulation();
+        final asset = await add(wrapOnPlanet(petals.triangles(), maxEdge: 1),
+            casts: false);
+        petalBuffer = asset.getVertexBuffer();
+        if (petalBuffer == null) {
+          throw StateError('Runtime petal geometry has no writable buffer');
         }
       }
     }
 
     final runtime = _SakuraRuntime._(viewer, await viewer.getActiveCamera(),
-        train, booms, lamps, petals, groundedCamera);
+        train, booms, lamps, petals, petalBuffer, groundedCamera);
     runtime._spawnCamera = await runtime.camera.getModelMatrix();
     runtime._clock.start();
     viewer.app.registerRequestFrameHook(runtime._onFrame);
@@ -1096,11 +1102,13 @@ class _SakuraRuntime {
               visible ? 1 : .001, visible ? 1 : .001, visible ? 1 : .001));
     }
 
-    for (var i = 0; i < petalGroups.length; i++) {
-      final phase = (_time * (.48 + i * .035) + i * 1.07) % 8.2;
-      final drift = math.sin(_time * (.55 + i * .07) + i) * .32;
-      await petalGroups[i]
-          .setTransform(Matrix4.translationValues(drift, -phase, 0));
+    if (petals != null && petalBuffer != null) {
+      final near = math.max(0.0, 1 - _trainX.abs() / 46);
+      _gust = math.max(_gust * math.exp(-dt * 1.4), near * near);
+      petals!.update(dt, _gust, 1);
+      final packed =
+          trisToPacked(wrapOnPlanet(petals!.triangles(), maxEdge: 1));
+      await petalBuffer!.setBufferAt(0, packed.positions);
     }
   }
 
