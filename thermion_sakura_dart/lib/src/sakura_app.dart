@@ -26,23 +26,6 @@ import 'package:thermion_sakura_dart/src/world_ref/railway.dart';
 import 'package:thermion_sakura_dart/src/world_ref/street.dart';
 import 'package:thermion_sakura_dart/src/world_ref/train.dart';
 
-Future<void> _writeCapturePng(
-    Uint8List bytes, int width, int height, String path) async {
-  final pixels = Float32List.view(
-      bytes.buffer, bytes.offsetInBytes, bytes.lengthInBytes ~/ 4);
-  final output = img.Image(width: width, height: height);
-  for (var y = 0; y < height; y++) {
-    for (var x = 0; x < width; x++) {
-      final offset = (y * width + x) * 4;
-      int channel(int index) =>
-          (pixels[offset + index].clamp(0.0, 1.0) * 255).round();
-      output.setPixelRgba(x, y, channel(0), channel(1), channel(2), channel(3));
-    }
-  }
-  await File(path).writeAsBytes(img.encodePng(output));
-  stdout.writeln('wrote ' + path);
-}
-
 /// Groups the flat authored world before planet wrapping so every resulting
 /// Filament renderable has a local bounding box. A single map-sized renderable
 /// prevents view-frustum culling even when only one street is visible.
@@ -150,7 +133,6 @@ class SakuraApp {
     final cameraPitch = parseGradeValue('pitch', -0.008);
     final referenceGeoPath = parseStringValue('reference-geo');
     final referenceAtlasPath = parseStringValue('reference-atlas');
-    final capturePrefix = parseStringValue('capture-prefix');
     final referenceBytes = referenceGeoPath == null
         ? null
         : await File(referenceGeoPath).readAsBytes();
@@ -521,96 +503,9 @@ class SakuraApp {
         'tint', C.lin(0x6c5f8c).x, C.lin(0x6c5f8c).y, C.lin(0x6c5f8c).z);
     await toonInst.setParameterFloat('globalGain', cel.globalGain);
 
-    // Directional sun shadow map. Unlike the former face-centroid CPU flag,
-    // this is sampled per pixel, so tree silhouettes and roof shadows can cross
-    // large road, wall, and train triangles without turning the whole face dark.
-    // Keep the reference light direction and center. The native PCSS penumbra is
-    // tuned separately above to match three.js PCFSoftShadowMap.
-    final shadowCenter = planetPosition(
-        parseGradeValue('shadow-center-x', cameraPx),
-        0,
-        parseGradeValue('shadow-center-z', cameraPz));
-    final worldUp = Vector3(0, 1, 0);
-    final shadowSunDir = worldLight(Vector3(
-        parseGradeValue('shadow-sun-x', -52),
-        parseGradeValue('shadow-sun-y', 62),
-        parseGradeValue('shadow-sun-z', 56)));
-    final shadowEye =
-        shadowCenter + shadowSunDir * math.sqrt(52 * 52 + 62 * 62 + 56 * 56);
-    const shadowSize = 2048;
-    final shadowView = ThermionViewerFFI(app: app);
-    await shadowView.initialized;
-    await shadowView.view.setViewport(shadowSize, shadowSize);
-    await app.renderManager.attach(shadowView.view, sc);
-    final shadowColor = await app.createTexture(shadowSize, shadowSize,
-        flags: {
-          TextureUsage.TEXTURE_USAGE_COLOR_ATTACHMENT,
-          TextureUsage.TEXTURE_USAGE_SAMPLEABLE,
-          TextureUsage.TEXTURE_USAGE_BLIT_SRC,
-        },
-        textureFormat: TextureFormat.RGBA32F);
-    final shadowDepth = await app.createTexture(shadowSize, shadowSize,
-        flags: {TextureUsage.TEXTURE_USAGE_DEPTH_ATTACHMENT},
-        textureFormat: TextureFormat.DEPTH32F);
-    final shadowTarget = await app.createRenderTarget(shadowSize, shadowSize,
-        color: shadowColor, depth: shadowDepth);
-    await shadowView.view.setRenderTarget(shadowTarget);
-    await shadowView.view.setPostProcessing(false);
-    await shadowView.view.setFrustumCullingEnabled(false);
-    final shadowCamera = await shadowView.getActiveCamera();
-    final shadowExtent = parseGradeValue('shadow-extent', 71.5);
-    await shadowCamera.setProjection(Projection.Orthographic, -shadowExtent / 2,
-        shadowExtent / 2, -shadowExtent / 2, shadowExtent / 2, 1, 200);
-    await shadowCamera.lookAt(shadowEye, focus: shadowCenter, up: worldUp);
-    final shadowMat = await app.createMaterial(sakuraDepthEncFilamat);
-    // buildPortedScene records only objects whose three.js counterparts set
-    // castShadow. Ground, water, hills, petals, and other receive-only geometry
-    // must not enter this depth pass.
-    final casterSource = requestedGroups == null
-        ? (argv.contains('--all-shadows')
-            ? casterFlat
-            : [
-                ...(casterGroups['sakura_4'] ?? const <Tri>[]),
-                ...(casterGroups['sakura_12'] ?? const <Tri>[]),
-                ...(casterGroups['poles'] ?? const <Tri>[]),
-              ])
-        : requestedGroups
-            .expand((name) => casterGroups[name] ?? const <Tri>[])
-            .toList();
-    final raisedCasters = casterSource
-        .where((t) =>
-            !t.mat.unlit && math.max(t.a.y, math.max(t.b.y, t.c.y)) > 0.55)
-        .toList();
-    final referenceCasterPositions =
-        referenceBytes != null && refGeoInfo(referenceBytes).version >= 3
-            ? refGeoPositions(referenceBytes, onlyLit: true, onlyCast: true)
-            : null;
-    final casterPacked = referenceCasterPositions == null
-        ? trisToPacked(wrapOnPlanet(raisedCasters, maxEdge: wrapEdge))
-        : null;
-    final casterPositions = referenceCasterPositions ?? casterPacked!.positions;
-    final casterIndices = referenceCasterPositions == null
-        ? casterPacked!.indices
-        : List<int>.generate(referenceCasterPositions.length ~/ 3, (i) => i);
-    stdout.writeln(referenceCasterPositions == null
-        ? 'shadow casters${requestedGroups == null ? '' : ' ${requestedGroups.join(',')}'}: '
-            '${raisedCasters.length}/${flatTris.length} tris'
-        : 'reference shadow casters: ${casterIndices.length ~/ 3} tris');
-    if (casterPositions.isNotEmpty) {
-      await shadowView.createGeometry(Geometry(casterPositions, casterIndices),
-          materialInstances: [await shadowMat.createInstance()]);
-    }
-    final sunVP = await shadowCamera.getProjectionMatrix() *
-        await shadowCamera.getViewMatrix();
-    // Matrix4 storage is column-major while this material parameter crosses the
-    // native FFI boundary as four row vectors; transpose at that boundary.
-    await toonInst.setParameterMat4('sunLightVP', sunVP.transposed());
-    await toonInst.setParameterFloat(
-        'shadowBias', parseGradeValue('shadow-bias', 0.0008));
-    await toonInst.setParameterFloat(
-        'shadowStrength', parseGradeValue('shadow-strength', 0.85));
     // Native Filament shadowMultiplier handles the directional shadow. Keep the
-    // old colour-depth lookup disabled while it remains available for diagnosis.
+    // legacy colour-depth lookup disabled. Its sampler must still be bound
+    // because it remains declared in the compiled material.
     await toonInst.setParameterFloat('shadowEnabled', 0.0);
     await toonInst.setParameterFloat(
         'shadowDebug',
@@ -619,13 +514,16 @@ class SakuraApp {
             : Platform.environment['SHADOW_MASK'] == '1'
                 ? 1.0
                 : 0.0);
-    final shadowSampler = await app.createTextureSampler(
+    final unusedShadow = await app.createTexture(1, 1,
+        flags: {TextureUsage.TEXTURE_USAGE_SAMPLEABLE},
+        textureFormat: TextureFormat.RGBA8);
+    final unusedShadowSampler = await app.createTextureSampler(
         minFilter: TextureMinFilter.NEAREST,
         magFilter: TextureMagFilter.NEAREST,
         wrapS: TextureWrapMode.CLAMP_TO_EDGE,
         wrapT: TextureWrapMode.CLAMP_TO_EDGE);
-    await toonInst.setParameterTexture('shadowMap', shadowColor as FFITexture,
-        shadowSampler as FFITextureSampler);
+    await toonInst.setParameterTexture('shadowMap', unusedShadow as FFITexture,
+        unusedShadowSampler as FFITextureSampler);
 
     for (final packed in worldPackedChunks) {
       if (packed.positions.isEmpty) continue;
@@ -821,62 +719,6 @@ class SakuraApp {
     await app.renderManager.attach(pp.view, sc, renderOrder: 1);
     await app.flush();
 
-    // Populate the shadow target before the colour pass samples it. Clear is
-    // global in Filament, so restore the fog clear immediately afterwards.
-    await app.setClearOptions(0, 0, 0, 0);
-    await app.capture(sc,
-        view: shadowView.view,
-        pixelDataFormat: PixelDataFormat.RGBA,
-        pixelDataType: PixelDataType.FLOAT);
-    final shadowCapture = await app.capture(sc,
-        view: shadowView.view,
-        pixelDataFormat: PixelDataFormat.RGBA,
-        pixelDataType: PixelDataType.FLOAT);
-    if (capturePrefix != null) {
-      await _writeCapturePng(shadowCapture.first.$2, shadowSize, shadowSize,
-          capturePrefix + '.shadow.png');
-    }
-    if (Platform.environment['SHADOW_DEBUG'] == '1') {
-      await File('/tmp/sakura_shadow.bin').writeAsBytes(shadowCapture.first.$2);
-      final shadowPixels = Float32List.view(shadowCapture.first.$2.buffer);
-      final debugPoints = cameraPz > 80
-          ? [
-              planetPosition(-39.10, 1.27, 86.70),
-              planetPosition(-38.506, .562, 86.06),
-              planetPosition(-39.10, .562, 86.70),
-            ]
-          : [
-              planetPosition(1.85, 0.15, 13.6),
-              planetPosition(0, 0.45, 0),
-              planetPosition(-5, 0.15, 10),
-              planetPosition(5, 0.15, 10),
-              planetPosition(-1.7, 0.15, 13.4),
-              planetPosition(1.0, 0.15, 11.0),
-            ];
-      for (final p in debugPoints) {
-        final clip = sunVP * Vector4(p.x, p.y, p.z, 1);
-        final nx = clip.x / clip.w;
-        final ny = clip.y / clip.w;
-        final nz = clip.z / clip.w;
-        final int ix = (((nx * .5 + .5) * shadowSize).floor())
-            .clamp(0, shadowSize - 1)
-            .toInt();
-        final int iy = (((ny * .5 + .5) * shadowSize).floor())
-            .clamp(0, shadowSize - 1)
-            .toInt();
-        final direct = shadowPixels[(iy * shadowSize + ix) * 4];
-        final flipped =
-            shadowPixels[((shadowSize - 1 - iy) * shadowSize + ix) * 4];
-        stdout.writeln(
-            'shadow probe p=$p ndc=($nx,$ny,$nz) map=$direct flipped=$flipped');
-      }
-    }
-    // Rebind after the offscreen pass. On llvmpipe the material instance kept
-    // the texture's pre-render state when it was first bound before capture.
-    await toonInst.setParameterTexture('shadowMap', shadowColor, shadowSampler);
-    await app.flush();
-    await app.setClearOptions(fog.x, fog.y, fog.z, 0.0);
-
     final runtime = runtimeAnimations && referenceBytes == null
         ? await _SakuraRuntime.create(v1, toonInst,
             groundedCamera: groundedCamera,
@@ -943,8 +785,13 @@ class SakuraApp {
   }
 
   /// Rebinds the final post-process view after Flutter replaces its surface.
-  Future<void> completePlatformResize() =>
-      postProcess.completePlatformOutputReplacement();
+  Future<void> completePlatformResize() async {
+    await postProcess.completePlatformOutputReplacement();
+    // Finish all target rebind/destroy commands before the host resumes its
+    // frame scheduler. Otherwise the next frame can overtake resize cleanup on
+    // Filament's backend thread and dereference a retired handle.
+    await app.flush();
+  }
 
   /// Pauses or resumes train, crossing, and petal animation.
   void setPaused(bool paused) => _runtime?.paused = paused;

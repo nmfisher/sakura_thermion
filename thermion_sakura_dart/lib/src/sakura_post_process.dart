@@ -33,6 +33,7 @@ class SakuraPostProcess {
   Texture? _ppColor;
   Texture? _ppDepth;
   Timer? _outputTargetTimer;
+  bool _followingPlatformOutput = false;
   bool _updatingOutputTarget = false;
   bool _destroyed = false;
 
@@ -343,14 +344,19 @@ class SakuraPostProcess {
   void followPlatformOutputTarget({
     Duration interval = const Duration(milliseconds: 50),
   }) {
+    if (_destroyed) return;
+    _followingPlatformOutput = true;
     _outputTargetTimer ??= Timer.periodic(interval, (_) {
       unawaited(_adoptPlatformOutputTarget());
     });
     unawaited(_adoptPlatformOutputTarget());
   }
 
-  Future<void> _adoptPlatformOutputTarget() async {
-    if (_destroyed || _updatingOutputTarget) return;
+  Future<void> _adoptPlatformOutputTarget({bool force = false}) async {
+    if (_destroyed || (!force && !_followingPlatformOutput) ||
+        _updatingOutputTarget) {
+      return;
+    }
     _updatingOutputTarget = true;
     try {
       final candidate = await _mainView.getRenderTarget();
@@ -374,6 +380,13 @@ class SakuraPostProcess {
   /// debounced texture resize replaces the target.
   Future<void> prepareForPlatformOutputReplacement() async {
     if (_destroyed) return;
+    // The periodic fallback must not observe the replacement halfway through
+    // Thermion's staged texture transaction. It used to race the platform
+    // surface manager, rebinding and destroying render targets that were still
+    // referenced by queued Filament commands.
+    _followingPlatformOutput = false;
+    _outputTargetTimer?.cancel();
+    _outputTargetTimer = null;
     while (_updatingOutputTarget) {
       await Future<void>.delayed(Duration.zero);
     }
@@ -396,7 +409,8 @@ class SakuraPostProcess {
     while (!_destroyed && DateTime.now().isBefore(deadline)) {
       final candidate = await _mainView.getRenderTarget();
       if (candidate != null && !identical(candidate, _sceneRT)) {
-        await _adoptPlatformOutputTarget();
+        await _adoptPlatformOutputTarget(force: true);
+        followPlatformOutputTarget();
         return;
       }
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -406,7 +420,9 @@ class SakuraPostProcess {
 
   Future<void> destroy() async {
     _destroyed = true;
+    _followingPlatformOutput = false;
     _outputTargetTimer?.cancel();
+    _outputTargetTimer = null;
     while (_updatingOutputTarget) {
       await Future<void>.delayed(Duration.zero);
     }

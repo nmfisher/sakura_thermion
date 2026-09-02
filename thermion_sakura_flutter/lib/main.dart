@@ -511,14 +511,6 @@ class _ExplorerPageState extends State<ExplorerPage>
                     decoration: BoxDecoration(color: Color(0xFF14141C)),
                   ),
                   onViewerAvailable: (viewer) async {
-                    // The ported builder renders its shadow map synchronously via
-                    // Filament's capture path.  Do not let Flutter's frame
-                    // scheduler drive the same Renderer between capture's
-                    // beginFrame/render/endFrame calls: on Metal that can fill
-                    // Filament's FrameInfo queue and leave the capture readback
-                    // waiting forever.
-                    final plugin = ThermionFlutterPlugin.instance;
-                    plugin.pauseFrameScheduler();
                     try {
                       if (_ported) {
                         _portedScene = await SakuraApp.create(
@@ -547,8 +539,6 @@ class _ExplorerPageState extends State<ExplorerPage>
                           _error = '$e';
                         });
                       }
-                    } finally {
-                      plugin.resumeFrameScheduler();
                     }
                   },
                 ),
