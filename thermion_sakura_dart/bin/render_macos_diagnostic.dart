@@ -69,7 +69,7 @@ Future<void> main(List<String> arguments) async {
       color: outputColor, depth: outputDepth);
   await viewer.view.setRenderTarget(outputTarget);
 
-  final scene = await buildPortedFilamentScene(viewer);
+  final scene = await SakuraApp.create(viewer);
   final sceneBytes = await _capture(app, swapChain, viewer.view);
   await _writeCapturePng(sceneBytes, width, height, prefix + '.scene.png');
   final finalBytes = await _capture(app, swapChain, scene.outputView);

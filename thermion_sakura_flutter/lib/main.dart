@@ -255,7 +255,7 @@ class _ExplorerPageState extends State<ExplorerPage>
   bool _building = true;
   bool _ready = false;
   bool _helpOpen = false;
-  SakuraFilamentScene? _portedScene;
+  SakuraApp? _portedScene;
 
   Future<void> _load() async {
     final path = _pathCtrl.text.trim();
@@ -325,7 +325,7 @@ class _ExplorerPageState extends State<ExplorerPage>
                 plugin.pauseFrameScheduler();
                 try {
                   if (_ported) {
-                    _portedScene = await buildPortedFilamentScene(viewer);
+                    _portedScene = await SakuraApp.create(viewer);
                   } else {
                     final geo = await loadGeoBytes(_source);
                     await buildSakuraScene(viewer, geo);

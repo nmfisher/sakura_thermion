@@ -1,14 +1,15 @@
 # Thermion Sakura Flutter
 
-Interactive Flutter viewer for the Sakura Crossing **realtime toon** scene. It
-loads the reference's extracted geometry (`ref_geo*.bin`) into a live Thermion
-viewport with the per-pixel cel material and painted sky — the same scene
-`thermion_sakura_dart/bin/render_realtime_ref.dart` renders headless — and lets
-you fly around it. This reference-geometry mode currently uses the legacy CPU
-`SunShadowMap`. **Ported** mode assembles the Dart scene used by the fidelity
-renderer, renders visible caster geometry into a light-space shadow texture,
-samples that texture per pixel, and applies live depth ink, anime grade,
-vignette, and FXAA through the `sakura_post` material.
+Interactive Flutter viewer for Sakura Crossing. In the default **Ported** mode,
+Flutter creates the platform Thermion viewer and passes it directly to
+`SakuraApp.create(viewer)`. This is the same application entry point used by
+the maximum-fidelity Dart renderer: geometry, camera, lighting, native Filament
+shadow pass, depth ink, anime grade, vignette, and FXAA are shared rather than
+reimplemented by the Flutter wrapper.
+
+The optional reference-geometry mode loads extracted `ref_geo*.bin` geometry
+into a live Thermion viewport. It remains a separate diagnostic path and uses
+the legacy CPU `SunShadowMap`.
 
 ## Run
 
@@ -46,7 +47,7 @@ why the bundled copy is gzip-compressed (it decompresses at load).
 - `buildSakuraScene(viewer, geo)` — loads extracted reference geometry with the
   legacy CPU `SunShadowMap`, multi-ramp cel shading, canopy no-receive-shadow,
   the `sky.dart` dome, linear color grade, and planet-surface spawn camera.
-- `buildPortedFilamentScene(viewer)` — assembles the Dart-authored world and
-  drives its per-pixel light-space shadow map and `sakura_post` finale.
+- `SakuraApp.create(viewer)` — constructs the complete Dart-authored fidelity
+  renderer. `bin/render_post.dart` and this Flutter app invoke this same API.
 - The `ViewerWidget` (from `thermion_flutter`) owns the Thermion engine,
   texture binding, and the free-flight gesture manipulator.

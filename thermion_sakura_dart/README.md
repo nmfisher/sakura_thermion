@@ -8,6 +8,11 @@ anime style — using **Dart + Thermion (Filament)**.
 The goal is visual fidelity with the reference: the same world, the same cel
 shading, the same depth-based ink outlines, the same anime colour grade.
 
+`SakuraApp.create(viewer)` is the shared application entry point. Both the
+headless Dart renderer and the Flutter desktop viewer supply a platform-owned
+Thermion viewer, then use this class to construct the identical ported world,
+camera, lighting, native Filament shadow pass, and live post-processing stack.
+
 ## How it works
 
 The reference renders Three.js `MeshToonMaterial` (quantised light bands + cool
@@ -62,6 +67,11 @@ This runs `bin/render.dart` under `xvfb-run`
 (`rt1.bin`) and depth (`depth.bin`) float buffers, then `tool/finale.py` to
 produce the final PNG. Camera matches the reference spawn (FOV 46, near 0.25,
 far 600, pos (1.85, 1.62, 13.6), yaw 0.20, pitch -0.008).
+
+`bin/render_post.dart` is the maximum-fidelity headless host. It creates a
+headless swapchain, calls `SakuraApp.create(viewer)`, and captures the shared
+app's scene and final output views. Scene construction does not live in the
+CLI.
 
 ### Diagnose the macOS Metal renderer
 
