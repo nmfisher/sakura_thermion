@@ -13,7 +13,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui' show PlatformDispatcher;
+import 'dart:ui' show ImageFilter, PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -267,7 +267,13 @@ class ExplorerPage extends StatefulWidget {
 
 class _ExplorerPageState extends State<ExplorerPage>
     with WidgetsBindingObserver {
+  static const _mouseCaptureChannel =
+      services.MethodChannel('sakura_thermion/mouse_capture');
+  static const _lookSensitivity = .0022;
   final _log = Logger('Explorer');
+  final Set<services.PhysicalKeyboardKey> _heldKeys = {};
+  Timer? _walkTimer;
+  bool _mouseCaptured = false;
   // The path field is an OPTIONAL override (e.g. /tmp/ref_geo.bin for the full
   // scene). Empty = use the bundled asset.
   late final TextEditingController _pathCtrl = TextEditingController();
@@ -316,6 +322,8 @@ class _ExplorerPageState extends State<ExplorerPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     services.HardwareKeyboard.instance.removeHandler(_handleKey);
+    _walkTimer?.cancel();
+    unawaited(_setMouseCaptured(false));
     final scene = _portedScene;
     if (scene != null) unawaited(scene.dispose());
     _pathCtrl.dispose();
@@ -332,6 +340,18 @@ class _ExplorerPageState extends State<ExplorerPage>
 
   bool _handleKey(services.KeyEvent event) {
     final key = event.physicalKey;
+    if (key == services.PhysicalKeyboardKey.keyW ||
+        key == services.PhysicalKeyboardKey.keyA ||
+        key == services.PhysicalKeyboardKey.keyS ||
+        key == services.PhysicalKeyboardKey.keyD ||
+        key == services.PhysicalKeyboardKey.shiftLeft ||
+        key == services.PhysicalKeyboardKey.shiftRight) {
+      if (event is services.KeyUpEvent) {
+        _heldKeys.remove(key);
+      } else if (!_menuOpen) {
+        _heldKeys.add(key);
+      }
+    }
     if (_menuOpen && event is! services.KeyUpEvent) {
       if (key == services.PhysicalKeyboardKey.keyW ||
           key == services.PhysicalKeyboardKey.keyA ||
@@ -354,6 +374,7 @@ class _ExplorerPageState extends State<ExplorerPage>
       return false;
     }
     if (!_ready) return false;
+    unawaited(_setMouseCaptured(false));
     setState(() {
       _started = true;
       _menuOpen = !_menuOpen;
@@ -368,6 +389,50 @@ class _ExplorerPageState extends State<ExplorerPage>
       _menuOpen = false;
     });
     _portedScene?.setPaused(false);
+    if (_ported) unawaited(_setMouseCaptured(true));
+  }
+
+  Future<void> _setMouseCaptured(bool captured) async {
+    if (_mouseCaptured == captured) return;
+    _mouseCaptured = captured;
+    if (!captured) _heldKeys.clear();
+    if (mounted) setState(() {});
+    if (!Platform.isMacOS) return;
+    try {
+      await _mouseCaptureChannel
+          .invokeMethod<void>(captured ? 'capture' : 'release');
+    } catch (error, stackTrace) {
+      _log.warning('mouse capture failed', error, stackTrace);
+    }
+  }
+
+  void _startWalkTimer() {
+    _walkTimer ??= Timer.periodic(const Duration(milliseconds: 16), (_) {
+      if (_menuOpen || !_ready || !_ported || _heldKeys.isEmpty) return;
+      final fast = _heldKeys.contains(services.PhysicalKeyboardKey.shiftLeft) ||
+          _heldKeys.contains(services.PhysicalKeyboardKey.shiftRight);
+      final step = fast ? .13 : .065;
+      final forward = (_heldKeys.contains(services.PhysicalKeyboardKey.keyW)
+              ? step
+              : 0.0) -
+          (_heldKeys.contains(services.PhysicalKeyboardKey.keyS) ? step : 0.0);
+      final right = (_heldKeys.contains(services.PhysicalKeyboardKey.keyD)
+              ? step
+              : 0.0) -
+          (_heldKeys.contains(services.PhysicalKeyboardKey.keyA) ? step : 0.0);
+      unawaited(_portedScene?.controlCamera(right: right, forward: forward) ??
+          Future<void>.value());
+    });
+  }
+
+  void _look(services.PointerHoverEvent event) {
+    if (!_mouseCaptured || _menuOpen || !_ported) return;
+    unawaited(_portedScene?.controlCamera(
+          yaw: event.delta.dx * _lookSensitivity,
+          // Intentionally inverted: moving the mouse up looks down.
+          pitch: -event.delta.dy * _lookSensitivity,
+        ) ??
+        Future<void>.value());
   }
 
   @override
@@ -377,55 +442,70 @@ class _ExplorerPageState extends State<ExplorerPage>
         children: [
           // The viewer (or a placeholder until a geometry path is chosen).
           Positioned.fill(
-            child: ViewerWidget(
-              key: ValueKey('${_ported ? 'ported' : 'ref'}:$_source'),
-              manipulatorType: ManipulatorType.FREE_FLIGHT,
-              initialCameraPosition: Vector3(1.85, 1.0, 13.7),
-              postProcessing: false,
-              background: const Color.fromARGB(255, 230, 236, 247),
-              initial: const DecoratedBox(
-                decoration: BoxDecoration(color: Color(0xFF14141C)),
+            child: MouseRegion(
+              cursor: _mouseCaptured
+                  ? SystemMouseCursors.none
+                  : SystemMouseCursors.basic,
+              onHover: _look,
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: (_) {
+                  if (_ready && !_menuOpen) unawaited(_setMouseCaptured(true));
+                },
+                child: ViewerWidget(
+                  key: ValueKey('${_ported ? 'ported' : 'ref'}:$_source'),
+                  manipulatorType: _ported
+                      ? ManipulatorType.NONE
+                      : ManipulatorType.FREE_FLIGHT,
+                  initialCameraPosition: Vector3(1.85, 1.0, 13.7),
+                  postProcessing: false,
+                  background: const Color.fromARGB(255, 230, 236, 247),
+                  initial: const DecoratedBox(
+                    decoration: BoxDecoration(color: Color(0xFF14141C)),
+                  ),
+                  onViewerAvailable: (viewer) async {
+                    // The ported builder renders its shadow map synchronously via
+                    // Filament's capture path.  Do not let Flutter's frame
+                    // scheduler drive the same Renderer between capture's
+                    // beginFrame/render/endFrame calls: on Metal that can fill
+                    // Filament's FrameInfo queue and leave the capture readback
+                    // waiting forever.
+                    final plugin = ThermionFlutterPlugin.instance;
+                    plugin.pauseFrameScheduler();
+                    try {
+                      if (_ported) {
+                        _portedScene = await SakuraApp.create(
+                          viewer,
+                          loadPackageAsset: _loadSakuraPackageAsset,
+                          runtimeAnimations: true,
+                          groundedCamera: true,
+                        );
+                        _portedScene!.setPaused(_menuOpen);
+                        _startWalkTimer();
+                      } else {
+                        final geo = await loadGeoBytes(_source);
+                        await buildSakuraScene(viewer, geo);
+                      }
+                      if (mounted) {
+                        setState(() {
+                          _building = false;
+                          _ready = true;
+                        });
+                      }
+                    } catch (e, st) {
+                      _log.severe('scene build failed', e, st);
+                      if (mounted) {
+                        setState(() {
+                          _building = false;
+                          _error = '$e';
+                        });
+                      }
+                    } finally {
+                      plugin.resumeFrameScheduler();
+                    }
+                  },
+                ),
               ),
-              onViewerAvailable: (viewer) async {
-                // The ported builder renders its shadow map synchronously via
-                // Filament's capture path.  Do not let Flutter's frame
-                // scheduler drive the same Renderer between capture's
-                // beginFrame/render/endFrame calls: on Metal that can fill
-                // Filament's FrameInfo queue and leave the capture readback
-                // waiting forever.
-                final plugin = ThermionFlutterPlugin.instance;
-                plugin.pauseFrameScheduler();
-                try {
-                  if (_ported) {
-                    _portedScene = await SakuraApp.create(
-                      viewer,
-                      loadPackageAsset: _loadSakuraPackageAsset,
-                      runtimeAnimations: true,
-                      groundedCamera: true,
-                    );
-                    _portedScene!.setPaused(_menuOpen);
-                  } else {
-                    final geo = await loadGeoBytes(_source);
-                    await buildSakuraScene(viewer, geo);
-                  }
-                  if (mounted) {
-                    setState(() {
-                      _building = false;
-                      _ready = true;
-                    });
-                  }
-                } catch (e, st) {
-                  _log.severe('scene build failed', e, st);
-                  if (mounted) {
-                    setState(() {
-                      _building = false;
-                      _error = '$e';
-                    });
-                  }
-                } finally {
-                  plugin.resumeFrameScheduler();
-                }
-              },
             ),
           ),
           // Top bar: path field + load + help.
@@ -453,6 +533,7 @@ class _ExplorerPageState extends State<ExplorerPage>
                       onChanged: (i) {
                         final scene = _portedScene;
                         if (scene != null) unawaited(scene.dispose());
+                        unawaited(_setMouseCaptured(false));
                         setState(() {
                           _ported = i == 1;
                           _portedScene = null;
@@ -562,7 +643,8 @@ class _ExplorerPageState extends State<ExplorerPage>
                   color: Colors.black.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Text('drag = look · WASD = move · scroll = dolly',
+                child: const Text(
+                    'mouse captured · WASD = grounded walk · Esc = release',
                     style: TextStyle(
                         color: Colors.white54,
                         fontSize: 11,
@@ -600,203 +682,545 @@ class _SakuraMenu extends StatelessWidget {
     const paper = Color(0xFFFBF5EA);
     const red = Color(0xFFCF5C62);
     return Positioned.fill(
-      child: Container(
-        color: const Color(0xAA77788F),
-        alignment: Alignment.center,
-        child: LayoutBuilder(builder: (context, constraints) {
-          final compact = constraints.maxWidth < 680;
-          final art = Container(
-            width: compact ? double.infinity : 245,
-            height: compact ? 145 : double.infinity,
-            decoration: const BoxDecoration(
-              color: red,
-              border: Border(right: BorderSide(color: ink, width: 2)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              stops: [0, .48, 1],
+              colors: [Color(0x7A424A70), Color(0x38DE8C97), Color(0x61F6E5DB)],
             ),
-            child: Stack(children: [
-              const Positioned(
-                left: 20,
-                top: 18,
-                child: Text('NIHONMACHI · 05:42 PM',
-                    style: TextStyle(
-                        color: Color(0xFFFFF8EF),
-                        fontSize: 10,
-                        letterSpacing: 1.5,
-                        fontWeight: FontWeight.w700)),
-              ),
-              Center(child: _CrossingMark(compact: compact)),
-              const Positioned(
-                left: 20,
-                bottom: 20,
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('WALK SLOWLY',
-                          style: TextStyle(
-                              color: Color(0xFFFFF8EF),
-                              fontSize: 10,
-                              letterSpacing: 1.5,
-                              fontWeight: FontWeight.bold)),
-                      Text('桜の季節',
-                          style: TextStyle(
-                              color: Color(0xFFFFF8EF),
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800)),
-                    ]),
-              ),
-            ]),
-          );
-          final copy = Padding(
-            padding: const EdgeInsets.fromLTRB(42, 38, 42, 28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(paused ? 'INTERMISSION · PAUSED' : 'A QUIET SPRING WALK',
-                    style: const TextStyle(
-                        color: Color(0xFF746B82),
-                        fontSize: 10,
-                        letterSpacing: 2,
-                        fontWeight: FontWeight.w800)),
-                const SizedBox(height: 14),
-                const Text('SAKURA',
-                    style: TextStyle(
-                        color: ink,
-                        height: .9,
-                        fontSize: 45,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -2)),
-                const Text('CROSSING',
-                    style: TextStyle(
-                        color: red,
-                        height: .95,
-                        fontSize: 45,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -2)),
-                const SizedBox(height: 10),
-                const Text('桜踏切   SAKURA CROSSING',
-                    style: TextStyle(
-                        color: ink,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1)),
-                const SizedBox(height: 18),
-                Text(
-                  paused
-                      ? 'The scene is waiting where you left it. Continue your walk when you’re ready.'
-                      : '沿着樱花盛开的日本街慢慢散步。穿过铁道、商店街与河岸，看一座三渲二小镇在黄昏里醒来。',
-                  style:
-                      const TextStyle(color: Color(0xFF655D70), height: 1.45),
-                ),
-                const SizedBox(height: 18),
-                const Wrap(spacing: 16, runSpacing: 8, children: [
-                  _Control(label: 'WASD', action: 'Move'),
-                  _Control(label: 'Mouse', action: 'Look'),
-                  _Control(label: 'Scroll', action: 'Dolly'),
-                  _Control(label: 'R', action: 'Opening view'),
-                  _Control(label: 'Esc', action: 'Pause'),
-                ]),
-                const SizedBox(height: 22),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: red,
-                      foregroundColor: const Color(0xFFFFF8EF),
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(3)),
-                          side: BorderSide(color: ink, width: 2)),
-                    ),
-                    onPressed: ready ? onEnter : null,
-                    child: Text(ready
-                        ? (paused ? 'Resume Walk   →' : '进入日本街   →')
-                        : 'Building Sakura Crossing…'),
+          ),
+          alignment: Alignment.center,
+          child: LayoutBuilder(builder: (context, constraints) {
+            final narrow =
+                constraints.maxWidth <= 520 || constraints.maxHeight <= 570;
+            final medium = !narrow && constraints.maxWidth <= 720;
+            final panelWidth = math.min(medium ? 620.0 : 780.0,
+                constraints.maxWidth - (narrow ? 28 : 48));
+            final artWidth = narrow
+                ? panelWidth
+                : (medium ? 132.0 : panelWidth * .78 / 2.20);
+            // CSS specifies a minimum height; its two-row control strip makes
+            // the intrinsic desktop card slightly taller in the start state.
+            final panelHeight = narrow ? null : (medium ? 450.0 : 462.0);
+            final art = SizedBox(
+              width: artWidth,
+              height: narrow ? 88 : panelHeight,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: red,
+                  border: Border(
+                    right: narrow
+                        ? BorderSide.none
+                        : const BorderSide(color: ink, width: 2),
+                    bottom: narrow
+                        ? const BorderSide(color: ink, width: 2)
+                        : BorderSide.none,
                   ),
                 ),
-                const SizedBox(height: 13),
-                Text(paused ? 'ESC TO RESUME' : 'CLICK TO BEGIN',
-                    style: const TextStyle(
-                        color: Color(0xFF857C8F),
-                        fontSize: 9,
-                        letterSpacing: 1.5,
-                        fontWeight: FontWeight.bold)),
-              ],
-            ),
-          );
-          return Container(
-            width: math.min(780, constraints.maxWidth - 40),
-            constraints: const BoxConstraints(maxHeight: 560),
-            decoration: BoxDecoration(
+                child: CustomPaint(
+                  painter: const _MenuArtPainter(),
+                  child: Stack(children: [
+                    const Positioned(
+                      left: 21,
+                      top: 20,
+                      child: Text('NIHONMACHI · 05:42 PM',
+                          style: TextStyle(
+                              color: Color(0xDBFFF8EF),
+                              fontFamily: 'monospace',
+                              fontSize: 10,
+                              letterSpacing: 1.8,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                    if (!narrow)
+                      const Positioned(
+                        right: 17,
+                        top: 18,
+                        child: _VerticalText('春の日本街'),
+                      )
+                    else
+                      const Positioned(
+                        left: 22,
+                        top: 39,
+                        child: Text('春の日本街',
+                            style: TextStyle(
+                                color: Color(0xFFFFF8EF),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 3)),
+                      ),
+                    Positioned(
+                      left: narrow ? null : (artWidth - 150) / 2,
+                      right: narrow ? 8 : null,
+                      top: narrow ? -31 : panelHeight! * .46 - 75,
+                      child: Transform.scale(
+                          scale: narrow ? .48 : (medium ? .72 : 1),
+                          alignment:
+                              narrow ? Alignment.centerRight : Alignment.center,
+                          child: const _CrossingMark()),
+                    ),
+                    if (!medium && !narrow)
+                      const Positioned(
+                        left: 22,
+                        bottom: 26,
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('WALK SLOWLY',
+                                  style: TextStyle(
+                                      color: Color(0xFFFFF8EF),
+                                      fontSize: 11,
+                                      letterSpacing: 1.32,
+                                      fontWeight: FontWeight.w700)),
+                              SizedBox(height: 4),
+                              Text('桜の季節',
+                                  style: TextStyle(
+                                      color: Color(0xFFFFF8EF),
+                                      fontSize: 17,
+                                      letterSpacing: 1,
+                                      fontWeight: FontWeight.w800)),
+                            ]),
+                      ),
+                  ]),
+                ),
+              ),
+            );
+            final copy = ColoredBox(
               color: paper,
-              border: Border.all(color: ink, width: 2),
-              borderRadius: BorderRadius.circular(5),
-              boxShadow: const [
-                BoxShadow(color: Color(0x663A334E), offset: Offset(10, 12))
-              ],
-            ),
-            child: compact
-                ? SingleChildScrollView(
-                    child: Column(
-                        mainAxisSize: MainAxisSize.min, children: [art, copy]))
-                : Row(children: [art, Expanded(child: copy)]),
-          );
-        }),
+              child: CustomPaint(
+                painter: const _RuledPaperPainter(),
+                child: Padding(
+                  padding: narrow
+                      ? const EdgeInsets.fromLTRB(34, 26, 24, 22)
+                      : medium
+                          ? const EdgeInsets.fromLTRB(38, 34, 28, 27)
+                          : const EdgeInsets.fromLTRB(46, 42, 46, 34),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Container(width: 24, height: 3, color: red),
+                        const SizedBox(width: 9),
+                        Text(
+                            paused
+                                ? 'INTERMISSION · PAUSED'
+                                : 'A QUIET SPRING WALK',
+                            style: const TextStyle(
+                                color: Color(0xFF746B82),
+                                fontSize: 10,
+                                letterSpacing: 2,
+                                fontWeight: FontWeight.w800)),
+                      ]),
+                      const SizedBox(height: 15),
+                      Text('SAKURA',
+                          style: TextStyle(
+                              color: ink,
+                              height: .9,
+                              fontSize: narrow ? 35 : 52,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -2.3)),
+                      Text('CROSSING',
+                          style: TextStyle(
+                              color: red,
+                              shadows: const [
+                                Shadow(color: ink, offset: Offset(2, 2))
+                              ],
+                              height: .9,
+                              fontSize: narrow ? 35 : 52,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -2.3)),
+                      const SizedBox(height: 14),
+                      const Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text('桜踏切',
+                                style: TextStyle(
+                                    color: ink,
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 5.3)),
+                            SizedBox(width: 12),
+                            Text('SAKURA CROSSING',
+                                style: TextStyle(
+                                    color: Color(0xFF7D7489),
+                                    fontFamily: 'monospace',
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1.1)),
+                          ]),
+                      SizedBox(height: narrow ? 16 : 22),
+                      Text(
+                        paused
+                            ? 'The scene is waiting where you left it. Adjust the music volume, then continue your walk when you’re ready.'
+                            : '沿着樱花盛开的日本街慢慢散步。穿过铁道、商店街与河岸，\n看一座三渲二小镇在黄昏里醒来。',
+                        style: const TextStyle(
+                            color: Color(0xFF625B70),
+                            fontSize: 13,
+                            height: 1.72),
+                      ),
+                      SizedBox(height: narrow ? 14 : 18),
+                      const Wrap(spacing: 7, runSpacing: 7, children: [
+                        _Control(label: 'WASD', action: 'Move'),
+                        _Control(label: 'Mouse', action: 'Look'),
+                        _Control(label: 'E', action: 'Interact'),
+                        _Control(label: 'Shift', action: 'Run'),
+                        _Control(label: 'V', action: 'E-Bike'),
+                        _Control(label: 'M', action: 'Music'),
+                        _Control(label: 'C', action: 'Coordinates'),
+                      ]),
+                      const SizedBox(height: 20),
+                      if (paused) ...[
+                        const _AudioControl(),
+                        const SizedBox(height: 18),
+                      ],
+                      if (narrow) const SizedBox(height: 4) else const Spacer(),
+                      _MenuButton(
+                        enabled: ready,
+                        label: ready
+                            ? (paused ? 'Resume Walk' : '进入日本街')
+                            : 'Building Sakura Crossing…',
+                        onPressed: onEnter,
+                      ),
+                      if (!narrow) ...[
+                        const SizedBox(height: 16),
+                        Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('3D SCENE · 2D ANIMATION SPIRIT',
+                                  style: _menuFootStyle),
+                              Text(paused ? 'ESC TO PAUSE' : 'CLICK TO BEGIN',
+                                  style: _menuFootStyle),
+                            ]),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+            return Container(
+              width: panelWidth,
+              height: panelHeight,
+              decoration: BoxDecoration(
+                color: paper,
+                border: Border.all(color: ink, width: 2),
+                borderRadius: BorderRadius.circular(5),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x3B3A334E), offset: Offset(10, 12)),
+                  BoxShadow(
+                      color: Color(0x66302B42),
+                      blurRadius: 70,
+                      spreadRadius: -28,
+                      offset: Offset(0, 28)),
+                ],
+              ),
+              child: Stack(children: [
+                narrow
+                    ? SingleChildScrollView(
+                        child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [art, copy]))
+                    : Row(children: [art, Expanded(child: copy)]),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      margin: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                          border: Border.all(color: const Color(0x2E3A334E))),
+                    ),
+                  ),
+                ),
+              ]),
+            );
+          }),
+        ),
       ),
     );
   }
 }
+
+const _menuFootStyle = TextStyle(
+    color: Color(0xFF827989),
+    fontFamily: 'monospace',
+    fontSize: 9,
+    fontWeight: FontWeight.w700,
+    letterSpacing: .72);
 
 class _Control extends StatelessWidget {
   const _Control({required this.label, required this.action});
   final String label;
   final String action;
   @override
-  Widget build(BuildContext context) =>
-      Row(mainAxisSize: MainAxisSize.min, children: [
-        Text(label,
-            style: const TextStyle(
-                color: Color(0xFF3A334E), fontWeight: FontWeight.w900)),
-        const SizedBox(width: 5),
-        Text(action,
-            style: const TextStyle(color: Color(0xFF81798B), fontSize: 12)),
-      ]);
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(5, 4, 8, 4),
+        decoration: BoxDecoration(
+          color: const Color(0xB3FFFCF5),
+          border: Border.all(color: const Color(0x383A334E)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            constraints: const BoxConstraints(minWidth: 22),
+            height: 20,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFF718BAD),
+              border: Border.all(color: const Color(0xFF3A334E)),
+            ),
+            child: Text(label,
+                style: const TextStyle(
+                    color: Color(0xFFFBF5EA),
+                    fontFamily: 'monospace',
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(width: 5),
+          Text(action,
+              style: const TextStyle(
+                  color: Color(0xFF696174),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700)),
+        ]),
+      );
 }
 
 class _CrossingMark extends StatelessWidget {
-  const _CrossingMark({required this.compact});
-  final bool compact;
+  const _CrossingMark();
   @override
   Widget build(BuildContext context) {
     Widget bar(double angle) => Transform.rotate(
           angle: angle,
           child: Container(
-            width: compact ? 105 : 145,
-            height: 20,
+            width: 130,
+            height: 23,
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF7E9),
               border: Border.all(color: const Color(0xFF3A334E), width: 2),
+              boxShadow: const [
+                BoxShadow(color: Color(0x3D3A334E), offset: Offset(3, 4))
+              ],
             ),
+            child: Row(
+                children: List.generate(
+                    5,
+                    (index) => Expanded(
+                          child: ColoredBox(
+                              color: index.isEven
+                                  ? const Color(0xFFFFF7E9)
+                                  : const Color(0xFFD76268)),
+                        ))),
           ),
         );
     return SizedBox(
-      width: 155,
-      height: 155,
+      width: 150,
+      height: 150,
       child: Stack(alignment: Alignment.center, children: [
         bar(math.pi / 4),
         bar(-math.pi / 4),
         Container(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
           decoration: BoxDecoration(
               color: const Color(0xFF3A334E),
-              borderRadius: BorderRadius.circular(20)),
+              borderRadius: BorderRadius.circular(999),
+              boxShadow: const [
+                BoxShadow(color: Color(0x57FFF7E9), offset: Offset(2, 3))
+              ]),
           child: const Row(mainAxisSize: MainAxisSize.min, children: [
-            CircleAvatar(radius: 8, backgroundColor: Color(0xFFE77779)),
-            SizedBox(width: 7),
-            CircleAvatar(radius: 8, backgroundColor: Color(0xFFF5C7B8)),
+            _SignalLamp(color: Color(0xFFE77779)),
+            SizedBox(width: 8),
+            _SignalLamp(color: Color(0xFFF5C7B8)),
           ]),
         ),
       ]),
     );
   }
+}
+
+class _SignalLamp extends StatelessWidget {
+  const _SignalLamp({required this.color});
+  final Color color;
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 17,
+        height: 17,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0xFFFFF7E9), width: 2),
+        ),
+      );
+}
+
+class _VerticalText extends StatelessWidget {
+  const _VerticalText(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Column(
+        children: text.characters
+            .map((character) => Text(character,
+                style: const TextStyle(
+                    color: Color(0xFFFFF8EF),
+                    fontSize: 18,
+                    height: 1.2,
+                    fontWeight: FontWeight.w800,
+                    shadows: [
+                      Shadow(color: Color(0x593A334E), offset: Offset(1, 1))
+                    ])))
+            .toList(),
+      );
+}
+
+class _MenuButton extends StatelessWidget {
+  const _MenuButton(
+      {required this.enabled, required this.label, required this.onPressed});
+  final bool enabled;
+  final String label;
+  final VoidCallback onPressed;
+  @override
+  Widget build(BuildContext context) => Container(
+        decoration: const BoxDecoration(boxShadow: [
+          BoxShadow(color: Color(0xFF3A334E), offset: Offset(5, 5))
+        ]),
+        child: GestureDetector(
+          onTap: enabled ? onPressed : null,
+          child: Container(
+            height: 51,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+                color:
+                    enabled ? const Color(0xFFCF5C62) : const Color(0xFFB99A9D),
+                border: Border.all(color: const Color(0xFF3A334E), width: 2)),
+            child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(label,
+                      style: const TextStyle(
+                          color: Color(0xFFFFFAF0),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1)),
+                  Container(
+                      width: 25,
+                      height: 25,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0xFFFFFAF0))),
+                      child: const Text('→',
+                          style: TextStyle(
+                              color: Color(0xFFFFFAF0), fontSize: 16))),
+                ]),
+          ),
+        ),
+      );
+}
+
+class _AudioControl extends StatelessWidget {
+  const _AudioControl();
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
+        decoration: BoxDecoration(
+          color: const Color(0xBDF2E5D6),
+          border: Border.all(color: const Color(0xFF3A334E), width: 1.5),
+          boxShadow: const [
+            BoxShadow(color: Color(0x33718BAD), offset: Offset(4, 4))
+          ],
+        ),
+        child: const Column(children: [
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('♪  BACKGROUND MUSIC',
+                style: TextStyle(
+                    color: Color(0xFF3A334E),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.3)),
+            Text('34%',
+                style: TextStyle(
+                    color: Color(0xFF746B82),
+                    fontFamily: 'monospace',
+                    fontSize: 11)),
+          ]),
+          SizedBox(height: 8),
+          _VolumeTrack(),
+        ]),
+      );
+}
+
+class _VolumeTrack extends StatelessWidget {
+  const _VolumeTrack();
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: 20,
+        child: Stack(alignment: Alignment.centerLeft, children: [
+          Container(
+              height: 6,
+              decoration: BoxDecoration(
+                  color: const Color(0xFFDDD4CA),
+                  border: Border.all(color: const Color(0xFF3A334E)))),
+          FractionallySizedBox(
+              widthFactor: .34,
+              child: Container(height: 4, color: const Color(0xFFCF5C62))),
+          const Positioned(
+              left: 96,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                    color: Color(0xFFFBF5EA),
+                    shape: BoxShape.circle,
+                    border: Border.fromBorderSide(
+                        BorderSide(color: Color(0xFF3A334E), width: 2))),
+                child: SizedBox(width: 17, height: 17),
+              )),
+        ]),
+      );
+}
+
+class _MenuArtPainter extends CustomPainter {
+  const _MenuArtPainter();
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stripe = Paint()..color = const Color(0x29FFF6E8);
+    for (double x = -size.height; x < size.width + size.height; x += 36) {
+      canvas.drawLine(Offset(x, size.height), Offset(x + size.height, 0),
+          stripe..strokeWidth = 2);
+    }
+    canvas.save();
+    canvas.translate(-size.width * .28, size.height - 44);
+    canvas.rotate(-8 * math.pi / 180);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width * 1.5, 142),
+        Paint()..color = const Color(0xFF6F88A9));
+    canvas.drawLine(
+        Offset.zero,
+        Offset(size.width * 1.5, 0),
+        Paint()
+          ..color = const Color(0xFF3A334E)
+          ..strokeWidth = 2);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _RuledPaperPainter extends CustomPainter {
+  const _RuledPaperPainter();
+  @override
+  void paint(Canvas canvas, Size size) {
+    final line = Paint()
+      ..color = const Color(0x1F718BAD)
+      ..strokeWidth = 1;
+    for (double y = 0; y < size.height; y += 30) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), line);
+    }
+    canvas.drawRect(Rect.fromLTWH(28, 0, 1, size.height),
+        Paint()..color = const Color(0x40CF5C62));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _HelpOverlay extends StatelessWidget {

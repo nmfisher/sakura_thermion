@@ -910,6 +910,17 @@ class SakuraApp {
   /// Returns the walking camera to the authored opening view.
   Future<void> resetCamera() async => _runtime?.resetCamera();
 
+  /// Applies first-person camera input. Translation is in camera-local metres;
+  /// look deltas are radians. Grounded runtimes immediately restore eye height.
+  Future<void> controlCamera({
+    double right = 0,
+    double forward = 0,
+    double yaw = 0,
+    double pitch = 0,
+  }) async =>
+      _runtime?.controlCamera(
+          right: right, forward: forward, yaw: yaw, pitch: pitch);
+
   /// Detaches frame callbacks owned by the optional realtime runtime.
   Future<void> dispose() async => _runtime?.dispose();
 }
@@ -1040,6 +1051,22 @@ class _SakuraRuntime {
   }
 
   Future<void> resetCamera() => camera.setModelMatrix(_spawnCamera.clone());
+
+  Future<void> controlCamera({
+    double right = 0,
+    double forward = 0,
+    double yaw = 0,
+    double pitch = 0,
+  }) async {
+    if (paused) return;
+    final current = await camera.getModelMatrix();
+    final rotation = Quaternion.axisAngle(Vector3(0, 1, 0), yaw) *
+        Quaternion.axisAngle(Vector3(1, 0, 0), pitch);
+    final updated = current *
+        Matrix4.compose(Vector3(right, 0, -forward), rotation, Vector3.all(1));
+    await camera.setModelMatrix(updated);
+    if (groundedCamera) await _groundCamera();
+  }
 
   Future<void> dispose() async {
     _clock.stop();
