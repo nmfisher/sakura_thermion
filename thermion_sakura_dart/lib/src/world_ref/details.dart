@@ -27,7 +27,7 @@ import 'street.dart' show centerX, groundY;
 const _metal = Mat(0xb8bcc6, tint: 0x666090, bands: '3'); // PAL.metal
 const _metalDark = Mat(0x878b96, tint: 0x5c5680, bands: '3'); // PAL.metalDark
 const _dark = Mat(0x36333e, tint: 0x4b4560, bands: '2'); // vehicles.js dark
-const _shelfMat = Mat(0xf3f0ea, tint: 0x7d74a0, bands: '2');
+const _shelfMat = Mat(0xf3f0ea, tint: 0x7d74a0, bands: '2', glaze: .13);
 const _portMat = Mat(0x35373f, tint: 0x3f3a55, bands: '2');
 const _trayMat = Mat(0x6e7280, tint: 0x4b4560, bands: '2');
 const _cabinet = Mat(0xd8d5da, tint: 0x6f6890, bands: '3'); // PAL.cabinet
@@ -58,13 +58,17 @@ void _cyl(List<Part> parts, double rt, double rb, double h, int seg, Mat mat,
 
 /// Bake parts, then offset to (x,y,z) and apply optional Euler-XYZ rotation.
 List<Tri> _bakePlace(List<Part> parts, double x, double y, double z,
+        {double rx = 0, double ry = 0, double rz = 0}) =>
+    _placeTris(bake(parts), x, y, z, rx: rx, ry: ry, rz: rz);
+
+List<Tri> _placeTris(List<Tri> baked, double x, double y, double z,
     {double rx = 0, double ry = 0, double rz = 0}) {
-  final baked = bake(parts);
   final off = Vector3(x, y, z);
   if (rx == 0 && ry == 0 && rz == 0) {
     return [
       for (final t in baked)
-        Tri(t.a + off, t.b + off, t.c + off, t.normal, t.mat)
+        Tri(t.a + off, t.b + off, t.c + off, t.normal, t.mat,
+            uvA: t.uvA, uvB: t.uvB, uvC: t.uvC)
     ];
   }
   final rot = trs(0, 0, 0, rx, ry, rz);
@@ -76,6 +80,9 @@ List<Tri> _bakePlace(List<Part> parts, double x, double y, double z,
         rot.transformed3(t.c) + off,
         rot.transformed3(t.normal),
         t.mat,
+        uvA: t.uvA,
+        uvB: t.uvB,
+        uvC: t.uvC,
       )
   ];
 }
@@ -288,7 +295,7 @@ List<Tri> buildTraffic() {
 //
 // Ported: 9 vehicle body specs (kei, keivan, hatch, sedan, wagon, minivan,
 // van, boxtruck, minibus) with body/deep/dark/brite/glass/lamp geometry.
-// Deferred: number plate textures, emissive lamp materials.
+// Deferred: emissive lamp materials.
 
 /// Car colour palette from vehicles.js.
 abstract final class CAR {
@@ -654,12 +661,6 @@ List<Tri> makeVehicle({
   _cyl(parts, 0.033, 0.033, 0.14, 8, briteMat, -L / 2 - 0.02, sill - 0.05,
       -(W / 2 - 0.32), 0, 0, math.pi / 2);
 
-  // Japanese 330 x 165 mm plates, standing clear of each bumper.
-  for (final sx in [1.0, -1.0]) {
-    _box(parts, 0.012, 0.165, 0.33, _plateMat, sx * (L / 2 + 0.10), sill + 0.13,
-        sx * 0.10);
-  }
-
   // Flank details: seams, handles, rocker strip.
   for (final t in [-1.0, 1.0]) {
     final zf = t * (HW + 0.004);
@@ -736,7 +737,15 @@ List<Tri> makeVehicle({
         y1 + 0.02, 0);
   }
 
-  return _bakePlace(parts, x, y, z, ry: ry);
+  final local = bake(parts);
+  for (final sx in [1.0, -1.0]) {
+    appendSignAtlasPlane(local, scooterPlateRegion,
+        width: .33,
+        height: .165,
+        matrix:
+            trs(sx * (L / 2 + .10), sill + .13, sx * .10, 0, sx * math.pi / 2));
+  }
+  return _placeTris(local, x, y, z, ry: ry);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -787,7 +796,7 @@ List<Tri> makeVendingMachine({
   if (variant % 3 == 2) vi[0] = tealBodyColor;
   final bodyMat = Mat(vi[0], tint: 0x6f6790, bands: '3');
   final accentMat = Mat(vi[1], tint: 0x6f6790, bands: '3');
-  final shelfBackMat = Mat(vi[2], tint: 0x413c58, bands: '2');
+  final shelfBackMat = Mat(vi[2], tint: 0x413c58, bands: '2', glaze: .13);
   final darkMat = const Mat(0x30333f, tint: 0x4b4560, bands: '2');
   const plinthMat = _metalDark;
 
@@ -803,6 +812,7 @@ List<Tri> makeVendingMachine({
   const portMX = (portX0 + portX1) / 2;
 
   final parts = <Part>[];
+  final mapped = <Tri>[];
 
   // Plinth.
   parts.add(Part(boxGeometry(bodyW - 0.05, 0.06, bodyD - 0.05), trs(0, 0.06, 0),
@@ -823,39 +833,14 @@ List<Tri> makeVendingMachine({
   // Header accent strip.
   _box(parts, bodyW - 0.02, 0.36, 0.03, accentMat, 0, yBase + bodyH - 0.22,
       front);
-  // Canvas header, represented as its exact high-level marks: a per-variant
-  // field, three compact glyph boxes, and the hollow circular brand mark.
-  // This retains the reference design even where Japanese UI fonts are absent.
+  // Exact Canvas2D header from the shared sign atlas.
   const signWhite = Mat(0xffffff, unlit: true);
-  final headerBg =
-      Mat([0xffffff, 0xe0453f, 0x2e9a98][variant % 3], unlit: true);
-  final headerFg =
-      variant % 3 == 0 ? const Mat(0xe0453f, unlit: true) : signWhite;
   final headerY = yBase + bodyH - 0.22;
   final headerZ = front + 0.034;
-  _box(parts, bodyW - 0.06, 0.30, 0.03, headerBg, 0, headerY, front + 0.015);
-  for (final gx in [-.32, -.17, -.02]) {
-    _box(parts, .09, .018, .012, headerFg, gx, headerY - .07, headerZ);
-    _box(parts, .09, .018, .012, headerFg, gx, headerY + .07, headerZ);
-    _box(parts, .015, .14, .012, headerFg, gx - .045, headerY, headerZ);
-    _box(parts, .015, .14, .012, headerFg, gx + .045, headerY, headerZ);
-  }
-  const ringRadius = .09;
-  for (var i = 0; i < 12; i++) {
-    final theta = i * math.pi * 2 / 12;
-    _box(
-        parts,
-        .048,
-        .018,
-        .012,
-        headerFg,
-        .30 + math.cos(theta) * ringRadius,
-        headerY + math.sin(theta) * ringRadius,
-        headerZ,
-        0,
-        0,
-        theta + math.pi / 2);
-  }
+  final headerRegion =
+      [vendHeader0Region, vendHeader1Region, vendHeader2Region][variant % 3];
+  appendSignAtlasPlane(mapped, headerRegion,
+      width: bodyW - .06, height: .30, matrix: trs(0, headerY, headerZ));
 
   // Product display cabinet.
   const dispW = bodyW - 0.22;
@@ -900,6 +885,12 @@ List<Tri> makeVendingMachine({
     _box(parts, dispW - 0.02, 0.018, 0.11, _shelfMat, 0, sy - 0.095, zShelf);
     _box(parts, dispW - 0.02, 0.055, 0.012, signWhite, 0, sy - 0.075,
         zGlass + 0.004);
+    appendSignAtlasPlane(mapped, vendPriceRegion,
+        width: dispW - .02,
+        height: .055,
+        matrix: trs(0, sy - .075, zGlass + .011),
+        material:
+            const Mat(0xffffff, unlit: true, noOutline: true, glaze: .13));
     final tall = s.isEven;
     for (var i = 0; i < 6; i++) {
       final px = -dispW / 2 + 0.09 + i * (dispW - 0.16) / 5;
@@ -913,7 +904,7 @@ List<Tri> makeVendingMachine({
           tall ? 0.032 : 0.03,
           h,
           8,
-          Mat(color, tint: 0x9c93b8, bands: 'soft3'),
+          Mat(color, tint: 0x9c93b8, bands: 'soft3', glaze: .13),
           px,
           sy + (tall ? 0.085 : 0.06),
           zShelf + 0.008,
@@ -936,6 +927,10 @@ List<Tri> makeVendingMachine({
   // Controls area: bright label plates stand in for the tiny canvas lettering.
   _box(parts, 0.42, 0.10, 0.012, signWhite, -0.28, yBase + 0.36, front + 0.008);
   _box(parts, 0.30, 0.10, 0.012, signWhite, 0.20, yBase + 0.36, front + 0.008);
+  appendSignAtlasPlane(mapped, vendColdRegion,
+      width: .42, height: .10, matrix: trs(-.28, yBase + .36, front + .015));
+  appendSignAtlasPlane(mapped, vendHotRegion,
+      width: .30, height: .10, matrix: trs(.20, yBase + .36, front + .015));
   // Selection buttons.
   const btnLitMat = const Mat(0xfff2cf, tint: 0x8f86ad, bands: '2');
   for (var r = 0; r < 2; r++) {
@@ -1080,12 +1075,13 @@ List<Tri> makeVendingMachine({
       ]),
       const [0, 1, 3, 1, 2, 3],
     );
-    parts.add(Part(brightSide, Matrix4.identity(), bodyMat));
+    parts.add(
+        Part(brightSide, Matrix4.identity(), const Mat(0x198284, unlit: true)));
   }
 
   // Can: DEFERRED (animated).
 
-  return _bakePlace(parts, x, y, z, ry: ry);
+  return _placeTris([...bake(parts), ...mapped], x, y, z, ry: ry);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -84,7 +84,7 @@ PackedGeo trisToPacked(List<Tri> tris, {SunShadowMap? shadow}) {
       attribute0[vi * 4] = tint.x;
       attribute0[vi * 4 + 1] = tint.y;
       attribute0[vi * 4 + 2] = tint.z;
-      attribute0[vi * 4 + 3] = 0.0;
+      attribute0[vi * 4 + 3] = mat.glaze;
       vi++;
     }
   }

@@ -478,7 +478,8 @@ class Mat {
       this.unlit = false,
       this.flat = true,
       this.noOutline = false,
-      this.receiveShadow = true});
+      this.receiveShadow = true,
+      this.glaze = 0});
   final int color;
   final int tint;
   final String bands;
@@ -486,6 +487,7 @@ class Mat {
   final bool flat;
   final bool noOutline;
   final bool receiveShadow;
+  final double glaze;
 }
 
 /// One transformed, material-tagged piece of geometry (a `bake` input).

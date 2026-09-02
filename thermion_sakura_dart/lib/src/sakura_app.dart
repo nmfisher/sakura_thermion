@@ -248,17 +248,17 @@ class SakuraApp {
                 roadPatchColor: parseShadowColor('road-patch', 0x9b96a7),
                 terrainColor: parseShadowColor('terrain', 0xc6c9ba),
                 curbColor: parseShadowColor('curb', 0xbbb6c4),
-                tactileColor: parseShadowColor('tactile', 0xffdc00),
-                gateYellowColor: parseShadowColor('gate-yellow', 0xf2b727),
+                tactileColor: parseShadowColor('tactile', 0xf2c53d),
+                gateYellowColor: parseShadowColor('gate-yellow', 0xf4c033),
                 blossomLightColor: parseShadowColor('blossom-light', 0xfeedf0),
                 blossomColor: parseShadowColor('blossom', 0xfac3d5),
                 blossomDeepColor: parseShadowColor('blossom-deep', 0xeda1bd),
                 vendingSideShadowColor:
-                    parseShadowColor('vending-side-shadow', 0x005260),
-                vendingTealColor: parseShadowColor('vending-teal', 0x198284),
-                shopRedColor: parseShadowColor('shop-red', 0xd83f3a),
-                shopRedSoftColor: parseShadowColor('shop-red-soft', 0xd95050),
-                shopWallColor: parseShadowColor('shop-wall', 0xe8dac5),
+                    parseShadowColor('vending-side-shadow', 0x075b6c),
+                vendingTealColor: parseShadowColor('vending-teal', 0x2e9a98),
+                shopRedColor: parseShadowColor('shop-red', 0xe0453f),
+                shopRedSoftColor: parseShadowColor('shop-red-soft', 0xef6a60),
+                shopWallColor: parseShadowColor('shop-wall', 0xf2e7d3),
                 manualTree0ShadowX: parseGradeValue('tree0-shadow-x', -0.36),
                 manualTree0ShadowY: parseGradeValue('tree0-shadow-y', 0.39),
                 manualTree0ShadowScale: parseGradeValue('tree0-shadow-scale', 1),
@@ -994,7 +994,7 @@ class _SakuraRuntime {
             casts: true);
       }
       if (animateBooms) {
-        final boom = buildCrossingBoom(gateYellowColor: 0xf2b727);
+        final boom = buildCrossingBoom(gateYellowColor: 0xf4c033);
         booms
           ..add(await add(boom, casts: true))
           ..add(await add(boom, casts: true));

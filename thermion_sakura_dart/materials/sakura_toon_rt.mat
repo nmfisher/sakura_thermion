@@ -112,6 +112,7 @@ fragment {
         float faceState = stateCode > 2.5 ? 1.0
             : (stateCode > 1.5 ? 0.75 : (stateCode > 0.5 ? 0.5 : 0.0));
         vec4 payload = variable_materialPayload;
+        float glaze = payload.a;
         vec2 atlasUv = getUV1();
         if (sourceMapped) {
             vec4 region = texelFetch(materialParams_atlasMetadata,
@@ -165,7 +166,8 @@ fragment {
         //   0.5 = lit face in cast shadow (CPU SunShadowMap) -> drop the sun
         //   0.0 = lit & sunlit
         if (faceState > 0.85) {
-            m.baseColor = vec4(applyLinearFog(base, viewZ), outputAlpha);
+            vec3 outc = mix(base, vec3(0.6866853, 0.8069523, 0.8879231), glaze);
+            m.baseColor = vec4(applyLinearFog(outc, viewZ), outputAlpha);
             return;
         }
         float vis = (faceState > 0.25 && faceState < 0.65) ? 0.0 : 1.0;
@@ -196,6 +198,7 @@ fragment {
         outc += base * mix(materialParams.hemiGroundI, materialParams.hemiSkyI, h);
 
         outc *= materialParams.globalGain;
+        outc = mix(outc, vec3(0.6866853, 0.8069523, 0.8879231), glaze);
         outc = applyLinearFog(outc, viewZ);
         m.baseColor = vec4(outc, outputAlpha);
     }

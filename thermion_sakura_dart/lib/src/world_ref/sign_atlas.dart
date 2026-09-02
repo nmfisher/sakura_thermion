@@ -8,7 +8,7 @@ import 'package:vector_math/vector_math_64.dart';
 import '../geom/three_geom.dart';
 
 const int sakuraSignAtlasWidth = 4096;
-const int sakuraSignAtlasHeight = 3528;
+const int sakuraSignAtlasHeight = 4096;
 
 class SignAtlasRegion {
   const SignAtlasRegion(this.x, this.y, this.width, this.height);
@@ -71,6 +71,18 @@ const superPoster1Region = SignAtlasRegion(1272, 3014, 362, 512);
 const superPoster2Region = SignAtlasRegion(1638, 3014, 362, 512);
 const superPoster3Region = SignAtlasRegion(2004, 3014, 362, 512);
 const superDealRegion = SignAtlasRegion(2370, 3014, 384, 512);
+const turnaroundWarningRegion = SignAtlasRegion(2760, 3014, 256, 512);
+const noParkingRegion = SignAtlasRegion(3020, 3014, 256, 256);
+const vendHeader0Region = SignAtlasRegion(2, 3530, 512, 160);
+const vendHeader1Region = SignAtlasRegion(518, 3530, 512, 160);
+const vendHeader2Region = SignAtlasRegion(1034, 3530, 512, 160);
+const vendPriceRegion = SignAtlasRegion(1550, 3530, 512, 96);
+const vendColdRegion = SignAtlasRegion(2066, 3530, 256, 96);
+const vendHotRegion = SignAtlasRegion(2326, 3530, 256, 96);
+const vendSlotRegion = SignAtlasRegion(2586, 3530, 256, 64);
+const bentoNorenRegion = SignAtlasRegion(2850, 3530, 512, 256);
+const shopFlag0Region = SignAtlasRegion(3366, 3530, 256, 384);
+const shopFlag1Region = SignAtlasRegion(3626, 3530, 256, 384);
 
 const _atlasMaterial = Mat(0xffffff, unlit: true, noOutline: true);
 

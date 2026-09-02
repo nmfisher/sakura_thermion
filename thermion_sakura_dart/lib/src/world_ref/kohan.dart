@@ -22,6 +22,7 @@ const _gravel = Mat(0xa9a3ab, tint: 0x6a6288, bands: '3');
 const _timber = Mat(0x9a7f5e, tint: 0x5c5680, bands: '3');
 const _timberPale = Mat(0xb89a72, tint: 0x665a79, bands: '3');
 const _timberDark = Mat(0x6f5943, tint: 0x554d72, bands: '3');
+const _metal = Mat(0xb8bcc6, tint: 0x666090, bands: '3');
 const _roof = Mat(0x58627c, tint: 0x504b70, bands: '3');
 const _roofBlue = Mat(0x657c91, tint: 0x535776, bands: '3');
 const _wall = Mat(0xe7e0d4, tint: 0x7a7396, bands: '3');
@@ -116,6 +117,39 @@ void _buildPark(List<Part> parts) {
   _box(parts, 5, .08, 9, _stone, 140, lowerY - .04, -78.4);
   _steps(parts, 138.1, -76, lowerY, upperY, 3, 4.2, direction: -1);
 
+  // Raked pram ramp beside the steps, including its authored outer railing.
+  // The collision-only eight-box staircase in Three.js is represented by the
+  // visible solid here; it is the missing silhouette at the left of the pier.
+  const rampX0 = 138.1, rampX1 = 137.4;
+  const rampZ = -71.2;
+  final rampRun = rampX1 - rampX0;
+  final rampLength =
+      math.sqrt(rampRun * rampRun + (lowerY - upperY) * (lowerY - upperY));
+  _box(
+      parts,
+      rampLength + .2,
+      .16,
+      2.4,
+      _concrete,
+      (rampX0 + rampX1) / 2,
+      (upperY + lowerY) / 2 - .04,
+      rampZ,
+      0,
+      0,
+      -math.atan2(lowerY - upperY, rampRun));
+
+  const railZ = -69.9;
+  final railBase = lowerY + .3;
+  final railCount = math.max(2, (rampRun.abs() / 1.35).round());
+  for (var k = 0; k <= railCount; k++) {
+    final x = rampX0 + rampRun * k / railCount;
+    _box(parts, .08, .9, .08, _metal, x, railBase + .45, railZ);
+  }
+  for (final h in [.45, .9]) {
+    _box(parts, rampRun.abs(), .065, .065, _metal, (rampX0 + rampX1) / 2,
+        railBase + h, railZ);
+  }
+
   // 東屋, kept behind the fidelity camera at its surveyed position.
   const px = 132.0, pz = -70.6, width = 4.0, depth = 3.4, height = 2.35;
   final py = hillSurfaceY(px, pz);
@@ -132,6 +166,7 @@ void _buildPark(List<Part> parts) {
     _box(parts, width - .24, .18, .13, _timberDark, px, py + height - .09,
         pz + sz * (depth / 2 - .2));
   }
+  _box(parts, .13, .16, depth - .24, _timberDark, px, py + height - .26, pz);
   const roofHeight = .85;
   for (final sz in [-1.0, 1.0]) {
     _box(
@@ -147,6 +182,14 @@ void _buildPark(List<Part> parts) {
   }
   _box(parts, width * .42, .14, .30, _roofBlue, px,
       py + height + roofHeight + .02, pz);
+
+  // Fixed benches around three sides of the pavilion.
+  _box(parts, width - 1.2, .07, .42, _timber, px, py + .44,
+      pz - (depth / 2 - .55));
+  for (final side in [-1.0, 1.0]) {
+    _box(parts, .42, .07, depth - 1.2, _timber, px + side * (width / 2 - .5),
+        py + .44, pz);
+  }
   _picnicTable(parts, 135.6, hillSurfaceY(135.6, -83.4), -83.4, .3);
   _picnicTable(parts, 136.8, hillSurfaceY(136.8, -87.6), -87.6, -.2);
 }

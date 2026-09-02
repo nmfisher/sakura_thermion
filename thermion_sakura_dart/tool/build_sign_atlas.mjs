@@ -38,7 +38,7 @@ try {
     const textures = await import('/src/core/textures.js');
     const atlas = document.createElement('canvas');
     atlas.width = 4096;
-    atlas.height = 3528;
+    atlas.height = 4096;
     const c = atlas.getContext('2d');
     c.clearRect(0, 0, atlas.width, atlas.height);
 
@@ -155,6 +155,18 @@ try {
       { image: textures.superPoster(2).image, x: 1638, y: 3014 },
       { image: textures.superPoster(3).image, x: 2004, y: 3014 },
       { image: textures.superDeal().image, x: 2370, y: 3014 },
+      { image: textures.warningPlate(3).image, x: 2760, y: 3014 },
+      { image: textures.noParking().image, x: 3020, y: 3014 },
+      { image: textures.vendHeader(0).image, x: 2, y: 3530 },
+      { image: textures.vendHeader(1).image, x: 518, y: 3530 },
+      { image: textures.vendHeader(2).image, x: 1034, y: 3530 },
+      { image: textures.vendPrice().image, x: 1550, y: 3530 },
+      { image: textures.vendCold(false).image, x: 2066, y: 3530 },
+      { image: textures.vendCold(true).image, x: 2326, y: 3530 },
+      { image: textures.vendSlot().image, x: 2586, y: 3530 },
+      { image: textures.norenTex('bento').image, x: 2850, y: 3530 },
+      { image: textures.flagTex(0).image, x: 3366, y: 3530 },
+      { image: textures.flagTex(1).image, x: 3626, y: 3530 },
     ];
     const padding = 2;
     for (const entry of entries) {

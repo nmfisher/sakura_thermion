@@ -87,7 +87,7 @@ def main() -> None:
             encoded = base64.b64encode(output.read_bytes()).decode("ascii")
             variable = VARIABLES[name]
             pattern = re.compile(
-                rf"final Uint8List {variable} = base64Decode\(\n\s*'[^']*'\);"
+                rf"final Uint8List {variable} = base64Decode\(\n\s*'[^']*',?\s*\);"
             )
             replacement = f"final Uint8List {variable} = base64Decode(\n    '{encoded}');"
             source, count = pattern.subn(replacement, source)

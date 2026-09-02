@@ -1,6 +1,6 @@
 /// Dart port of reference `src/world/props.js` foreground factories:
 /// `makeKeiTruck`, `makeBicycle`, `makeCone`, `makeBarrier`,
-/// `makeGuardrail`, `makePlanter`, `makeCrates`.
+/// `makeGuardrail`, `makePlanter`, `makeCrates`, and small shopfront props.
 ///
 /// Built entirely on the geometry substrate (`geom/three_geom.dart`).
 /// Mirrors `make_pole.dart` conventions: returns `List<Tri>`, inline
@@ -13,6 +13,7 @@ import 'dart:typed_data';
 import 'package:vector_math/vector_math_64.dart';
 
 import '../geom/three_geom.dart';
+import 'sign_atlas.dart';
 
 // ---------------------------------------------------------------------------
 // Material palette — mirrors props.js mats().
@@ -86,12 +87,17 @@ void _tube(List<Part> arr, Vector3 a, Vector3 b, double r, Mat mat) {
 /// Bake parts, then offset to (x,y,z) and apply optional Euler-XYZ rotation.
 List<Tri> _bakePlace(List<Part> parts, double x, double y, double z,
     {double rx = 0, double ry = 0, double rz = 0}) {
-  final baked = bake(parts);
+  return _placeTris(bake(parts), x, y, z, rx: rx, ry: ry, rz: rz);
+}
+
+List<Tri> _placeTris(List<Tri> baked, double x, double y, double z,
+    {double rx = 0, double ry = 0, double rz = 0}) {
   final off = Vector3(x, y, z);
   if (rx == 0 && ry == 0 && rz == 0) {
     return [
       for (final t in baked)
-        Tri(t.a + off, t.b + off, t.c + off, t.normal, t.mat)
+        Tri(t.a + off, t.b + off, t.c + off, t.normal, t.mat,
+            uvA: t.uvA, uvB: t.uvB, uvC: t.uvC)
     ];
   }
   final rot = trs(0, 0, 0, rx, ry, rz);
@@ -103,6 +109,9 @@ List<Tri> _bakePlace(List<Part> parts, double x, double y, double z,
         rot.transformed3(t.c) + off,
         rot.transformed3(t.normal),
         t.mat,
+        uvA: t.uvA,
+        uvB: t.uvB,
+        uvC: t.uvC,
       )
   ];
 }
@@ -118,7 +127,7 @@ List<Tri> _bakePlace(List<Part> parts, double x, double y, double z,
 /// [ry] yaw in radians.
 /// [x], [y], [z] world offset.
 ///
-/// Deferred: rear number plate (canvas texture).
+/// Includes the exact source Canvas2D rear number plate through the sign atlas.
 List<Tri> makeKeiTruck({
   double x = 0,
   double y = 0,
@@ -235,9 +244,10 @@ List<Tri> makeKeiTruck({
   parts.add(Part(
       boxGeometry(0.1, 0.16, W - 0.1), trs(-L / 2 - 0.03, 0.78, 0), _metal));
 
-  // ── plate: DEFERRED (canvas texture platePlate) ──
-
-  return _bakePlace(parts, x, y, z, ry: ry);
+  final local = bake(parts);
+  appendSignAtlasPlane(local, scooterPlateRegion,
+      width: .40, height: .20, matrix: trs(-L / 2 - .05, .95, 0, 0, -halfPi));
+  return _placeTris(local, x, y, z, ry: ry);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -619,4 +629,109 @@ List<Tri> makePostBox({
         const Mat(0xf6f2e8, unlit: true)),
   ];
   return _bakePlace(parts, x, y, z, ry: ry);
+}
+
+List<Tri> makeMilkCrate({
+  double x = 0,
+  double y = 0,
+  double z = 0,
+  double ry = 0,
+  int n = 2,
+  int color = 0xd8d4dc,
+}) {
+  final crate = Mat(color, tint: 0x6a6288, bands: '3');
+  const trim = Mat(0x9a94a6, tint: 0x6a6288, bands: '2');
+  const bottle = Mat(0xf6f2ea, tint: 0x9c93b8, bands: 'soft');
+  final parts = <Part>[];
+  for (var i = 0; i < n; i++) {
+    parts.add(Part(boxGeometry(.44, .24, .32), trs(0, .12 + i * .24), crate));
+    parts.add(Part(boxGeometry(.38, .04, .26), trs(0, .23 + i * .24), trim));
+  }
+  for (var i = 0; i < 4; i++) {
+    parts.add(Part(
+        cylGeometry(.032, .032, .14, 8),
+        trs(-.14 + (i % 2) * .10, .24 * n + .07, -.07 + (i ~/ 2) * .14),
+        bottle));
+  }
+  return _bakePlace(parts, x, y, z, ry: ry);
+}
+
+List<Tri> makeRecycleBox({
+  double x = 0,
+  double y = 0,
+  double z = 0,
+  double ry = 0,
+  double w = .86,
+  double d = .54,
+  double h = .66,
+  int color = 0x4a7fae,
+}) {
+  final body = Mat(color, tint: 0x4a4a92, bands: '3');
+  const blue = Mat(0x3f6f9c, tint: 0x4a4a92, bands: '3');
+  final parts = <Part>[
+    Part(boxGeometry(w, h, d), trs(0, h / 2), body),
+    Part(boxGeometry(w + .05, .07, d + .05), trs(0, h + .05, -.02, -.07), blue),
+  ];
+  for (final side in [-1.0, 1.0]) {
+    parts.add(Part(boxGeometry(.09, .11, .03),
+        trs(side * (w / 2 - .14), h - .02, d / 2 + .02), _metalDark));
+  }
+  for (var i = 0; i < 3; i++) {
+    parts.add(
+        Part(boxGeometry(w + .02, .025, d + .02), trs(0, .16 + i * .18), blue));
+  }
+  parts.add(Part(boxGeometry(.42, .16, .02), trs(0, h * .56, d / 2 + .015),
+      const Mat(0xf2efe4, unlit: true, noOutline: true)));
+  return _bakePlace(parts, x, y, z, ry: ry);
+}
+
+List<Tri> makeUmbrellaStand({
+  double x = 0,
+  double y = 0,
+  double z = 0,
+  double ry = 0,
+  int n = 3,
+  int seed = 51,
+}) {
+  final rng = RngKit(seed);
+  final parts = <Part>[
+    Part(cylGeometry(.20, .18, .52, 10, openEnded: true), trs(0, .26),
+        const Mat(0xcfcbd4, tint: 0x6a6288, bands: '3')),
+    Part(cylGeometry(.19, .19, .03, 10), trs(0, .03), _metalDark),
+  ];
+  const canopyColors = [0xc9bfd8, 0xc9bfd8, 0xd8d4e4, 0xe4d8e0];
+  for (var i = 0; i < n; i++) {
+    final angle = i / n * math.pi * 2 + .6;
+    final lean = rng.range(.10, .22);
+    final local = trs(math.cos(angle) * .09, .06, math.sin(angle) * .09,
+        math.sin(angle) * lean, 0, -math.cos(angle) * lean);
+    parts.add(
+        Part(cylGeometry(.013, .013, .94, 5), local * trs(0, .47), _metal));
+    parts.add(Part(
+        cylGeometry(0, .075, .42, 7, openEnded: true),
+        local * trs(0, .72),
+        Mat(rng.pick(canopyColors), unlit: true, noOutline: true)));
+    parts.add(Part(cylGeometry(.014, .014, .10, 5), local * trs(0, .98),
+        const Mat(0x6a5a5e, bands: '2')));
+  }
+  return _bakePlace(parts, x, y, z, ry: ry);
+}
+
+List<Tri> makeBroom({
+  double x = 0,
+  double y = 0,
+  double z = 0,
+  double ry = 0,
+  double tilt = .24,
+  double roll = .10,
+}) {
+  final parts = <Part>[
+    Part(cylGeometry(.022, .026, 1.50, 6), trs(0, .75),
+        const Mat(0xc2a874, tint: 0x6f6790, bands: '3')),
+    Part(cylGeometry(0, .18, .44, 7, openEnded: true), trs(0, .22),
+        const Mat(0xa88a5e, tint: 0x6f6790, bands: '3')),
+    Part(cylGeometry(.055, .05, .08, 7), trs(0, .43),
+        const Mat(0x8a6f52, bands: '2')),
+  ];
+  return _bakePlace(parts, x, y, z, rx: tilt, ry: ry, rz: roll);
 }

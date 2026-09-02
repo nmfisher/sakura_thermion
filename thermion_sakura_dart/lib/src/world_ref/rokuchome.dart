@@ -14,11 +14,19 @@ import 'details.dart';
 import 'make_house.dart';
 import 'make_pole.dart';
 import 'make_props.dart'
-    show makeBicycle, makeCone, makeCrates, makeGuardrail, makeKeiTruck;
+    show
+        makeBicycle,
+        makeBroom,
+        makeCone,
+        makeCrates,
+        makeGuardrail,
+        makeKeiTruck,
+        makeMilkCrate,
+        makeRecycleBox,
+        makeUmbrellaStand;
 import 'make_sakura.dart';
 import 'make_trees_other.dart';
 import 'petals.dart';
-import 'pixel_text.dart';
 import 'sign_atlas.dart';
 
 const _y = .513;
@@ -56,16 +64,6 @@ void _box(List<Part> p, double w, double h, double d, Mat m, double x, double y,
 void _cyl(List<Part> p, double r, double h, int n, Mat m, double x, double y,
     double z) {
   p.add(Part(cylGeometry(r, r, h, n), trs(x, y, z), m));
-}
-
-List<Tri> _place(List<Part> parts, double x, double y, double z) {
-  final world = trs(x, y, z);
-  return [
-    for (final t in bake(parts))
-      Tri(world.transformed3(t.a), world.transformed3(t.b),
-          world.transformed3(t.c), t.normal, t.mat,
-          uvA: t.uvA, uvB: t.uvB, uvC: t.uvC),
-  ];
 }
 
 List<Tri> _projectRoadShadow(List<Tri> caster) {
@@ -234,7 +232,6 @@ List<Tri> _walkup(double x, double z, double w, double d, int floors, int units,
   final wall = Mat(_shadeColor(wallColor, .50), tint: 0x5c5680, bands: '3');
   _box(p, w, height, d, wall, 0, height / 2, 0);
   _box(p, w + .3, .16, d + .35, _roof, 0, height + .08, 0);
-  // South-facing access galleries and countable apartment doors.
   for (var floor = 0; floor < floors; floor++) {
     final gy = floor * fh + .28;
     _box(p, w + .15, .11, 1.05, _concreteMid, 0, gy, -d / 2 - .35);
@@ -249,13 +246,18 @@ List<Tri> _walkup(double x, double z, double w, double d, int floors, int units,
       _box(p, .42, .55, .04, _warm, dx, floor * fh + 1.52, -d / 2 - .09);
     }
   }
-  // External stair at the east gable.
   for (var i = 0; i < floors * 11; i++) {
     final t = i / (floors * 11);
-    _box(p, .95, .12, .35, _concreteMid, w / 2 + .55, .12 + t * (height - .45),
-        -d / 2 + .2 + t * 2.3);
+    _box(p, .95, .12, .35, _concreteMid, w / 2 + .55,
+        .12 + t * (height - .45), -d / 2 + .2 + t * 2.3);
   }
-  return _place(p, x, _y, z);
+  final world = trs(x, _y, z);
+  return [
+    for (final t in bake(p))
+      Tri(world.transformed3(t.a), world.transformed3(t.b),
+          world.transformed3(t.c), t.normal, t.mat,
+          uvA: t.uvA, uvB: t.uvB, uvC: t.uvC)
+  ];
 }
 
 List<Tri> _shelter() {
@@ -405,6 +407,8 @@ List<Tri> buildRokuchome({
     _box(ground, spec.$3, .02, spec.$4, _asphaltWorn, spec.$1, _y + .014,
         spec.$2);
   }
+  // No-parking kerb line along the two shopfronts (kerbLine in the source).
+  _box(ground, 4.2, .02, .11, _yellow, 55.3, _y + .034, 50.0);
   // Waiting island and the bus's yellow stopping box.
   _box(ground, 4.4, .11, 2.4, _sidewalk, 65.8, _y + .055, 58.1);
   for (final dz in [-1.4, 1.4]) {
@@ -434,30 +438,30 @@ List<Tri> buildRokuchome({
       shutter: .22));
   add(_shop(x: 58.5, z: 47.0, w: 3.4, d: 3.4, seed: 9761, green: false));
   final shopCloths = <Part>[];
-  const clothCream = Mat(0xfdf4e4, unlit: true, noOutline: true);
-  const clothOchre = Mat(0xb8763a, unlit: true, noOutline: true);
-  const clothRed = Mat(0xd8564e, unlit: true, noOutline: true);
 
-  // お弁当 のはら doorway curtain, 0.16 m proud of the shop header.
-  _box(shopCloths, 2.10, .62, .026, clothOchre, 58.50, _y + 2.26, 48.86);
-  appendPixelText(shopCloths, 'お弁当',
-      x: 58.50,
-      y: _y + 2.27,
-      z: 48.879,
-      height: .38,
-      charWidth: .30,
-      spacing: .04,
-      depth: .022,
-      mat: clothCream);
+  // Exact source Canvas2D お弁当 noren, 0.16 m proud of the shop header.
+  final mappedCloths = <Tri>[];
+  appendSignAtlasPlane(mappedCloths, bentoNorenRegion,
+      width: 2.10,
+      height: .62,
+      // The source places the rail at y=2.26 and offsets the cloth downward
+      // by half its height from that pivot.
+      matrix: trs(58.50, _y + 2.26 - .31, 48.879));
+  _box(shopCloths, 2.24, .05, .05, _metalDark, 58.50, _y + 2.28, 48.86);
 
-  // Zakka hanging flag and the bento shop's freestanding promotion flag.
-  _box(shopCloths, .42, .95, .024, clothCream, 53.55, _y + 2.50, 49.13);
-  _box(shopCloths, .10, .68, .020, clothRed, 53.55, _y + 2.50, 49.148);
+  // Exact source flags: the Zakka cloth hangs below a top pivot, while the
+  // freestanding bento flag is offset from its pole and yawed locally.
+  appendSignAtlasPlane(mappedCloths, shopFlag1Region,
+      width: .42, height: .95, matrix: trs(53.55, _y + 2.50 - .475, 49.13));
+  _box(shopCloths, .56, .05, .05, _metalDark, 53.55, _y + 2.52, 49.13);
   _cyl(shopCloths, .022, 1.90, 5, _metal, 57.05, _y + .95, 48.86);
   _cyl(shopCloths, .14, .10, 10, _concreteMid, 57.05, _y + .05, 48.86);
-  _box(shopCloths, .38, 1.0, .024, clothCream, 57.25, _y + 1.28, 48.88, 0, .12);
-  _box(shopCloths, .09, .72, .020, clothRed, 57.25, _y + 1.28, 48.895, 0, .12);
+  appendSignAtlasPlane(mappedCloths, shopFlag0Region,
+      width: .38,
+      height: 1.0,
+      matrix: trs(57.05, _y, 48.86) * trs(.20, 1.28, .02, 0, .12));
   add(bake(shopCloths));
+  add(mappedCloths);
   add(_walkup(57.4, 63.6, 6.8, 4.4, 3, 3, 0xdedee6));
   add(_walkup(65.8, 63.3, 5.8, 4.6, 2, 2, 0xd6e3ee));
   add(_walkup(74.4, 62.6, 7.8, 5.2, 2, 3, 0xf2e7d3));
@@ -510,7 +514,10 @@ List<Tri> buildRokuchome({
       lean: .07,
       color: 0x3f6f9c));
   add(makeCrates(x: 56.25, y: _y, z: 49.22, n: 3, seed: 9766, ry: .1));
-  add(makeCrates(x: 59.95, y: _y, z: 48.90, n: 2, seed: 9762, ry: .2));
+  add(makeMilkCrate(x: 59.95, y: _y, z: 48.90, n: 2, ry: .2));
+  add(makeRecycleBox(x: 60.35, y: _y, z: 46.20, ry: math.pi / 2));
+  add(makeUmbrellaStand(x: 53.60, y: _y, z: 49.20, n: 4, seed: 9767));
+  add(makeBroom(x: 53.32, y: _y, z: 49.05, ry: .3, tilt: .2));
 
   // Three short tangential runs protect the raised outer rim of the turning
   // bulb. They project as the continuous white rail that closes the street
@@ -545,31 +552,18 @@ List<Tri> buildRokuchome({
   add(makeCone(x: 74.9, y: _y, z: 55.9, ry: .3));
   add(makeCone(x: 75.3, y: _y, z: 54.6, ry: -.5, tilt: .05));
 
-  // Turnaround / no-parking plate at the throat. The source uses canvas
-  // textures; layered low-poly plates preserve the same tall white silhouette
-  // and the distinctive blue/red prohibition roundel from this camera.
+  // Exact source turnaround and no-parking plates at the throat.
   final signs = <Part>[];
   const signX = 64.20, signZ = 55.50, signRy = -1.9707963267948966;
   final signMx = trs(signX, _y, signZ, 0, signRy);
-  signs.add(Part(
-      cylGeometry(.045, .045, 2.30, 8), signMx * trs(0, 1.15), _metalDark));
-  signs.add(Part(boxGeometry(.44, .72, .055), signMx * trs(0, 1.78), _white));
-  for (var i = 0; i < 3; i++) {
-    signs.add(Part(boxGeometry(.055, .14, .025),
-        signMx * trs(-.10 + i * .10, 1.82, .035), _concreteDark));
-  }
-  signs.add(Part(boxGeometry(.48, .48, .055), signMx * trs(0, 1.23), _white));
-  signs.add(Part(
-      cylGeometry(.19, .19, .035, 16),
-      signMx * trs(0, 1.23, .045, math.pi / 2),
-      const Mat(0x3d6ec4, unlit: true, noOutline: true)));
-  signs.add(Part(cylGeometry(.145, .145, .039, 16),
-      signMx * trs(0, 1.23, .068, math.pi / 2), _white));
-  signs.add(Part(
-      boxGeometry(.37, .045, .025),
-      signMx * trs(0, 1.23, .095, 0, 0, -.72),
-      const Mat(0xd8564e, unlit: true)));
-  add(bake(signs));
+  signs.add(
+      Part(cylGeometry(.045, .045, 2.30, 8), signMx * trs(0, 1.15), _metal));
+  final mappedSigns = bake(signs);
+  appendSignAtlasPlane(mappedSigns, turnaroundWarningRegion,
+      width: .44, height: .72, matrix: signMx * trs(0, 1.78, .05));
+  appendSignAtlasPlane(mappedSigns, noParkingRegion,
+      width: .44, height: .44, matrix: signMx * trs(0, 1.22, .05));
+  add(mappedSigns);
 
   for (final spec in const [
     (53.1, 55.3, 8.4, 9761, true, -1, math.pi),
@@ -578,7 +572,7 @@ List<Tri> buildRokuchome({
     (49.75, 57.4, 8.2, 9764, false, 1, math.pi / 2),
     (49.75, 63.4, 8.0, 9765, true, 1, math.pi / 2),
   ]) {
-    add(makePole(PoleOpts(
+    add(makePoleLite(PoleOpts(
         x: spec.$1,
         y: _y,
         z: spec.$2,

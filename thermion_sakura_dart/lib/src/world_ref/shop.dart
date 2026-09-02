@@ -126,30 +126,39 @@ List<Tri> buildShop(
   // recessed doorway behind shutter
   add(boxGeometry(0.5, h1 - 0.5, sw),
       trs(xFront + 0.3, y0 + (h1 - 0.5) / 2, zc), _shutterRecessMat);
-  // shutter slat (texture deferred → solid shutter colour, partially open)
+  // The authored opening frame starts 18% open.
   const sh = h1 - 0.55;
   const shTop = y0 + sh;
-  // start 18% open like the reference
   final sy = math.max(0.08, 1.0 - 0.18 * 0.92);
   add(boxGeometry(0.07, sh * sy, sw),
       trs(xFront - 0.055, shTop - (sh * sy) / 2, zc), _shutterMat);
   if (shutterGrooves) {
-    // Geometry fallback for shutterTex(26): the texture modulates the entire
-    // shutter into alternating dark slats, with each row boundary still
-    // available to the depth-ink pass.
+    // Reproduce shutterTex(26) with shallow, separately shaded slat faces. The
+    // source texture modulates PAL.shutter with alternating #eae6ee/#c9c4d2
+    // bands and a 2.5 px #9a94a6 seam at the bottom of every 512/26 px row.
+    // These colours are that modulation baked through the reference's shaded
+    // shutter value. They remain unlit so the bands do not receive the sun a
+    // second time in the flattened toon pipeline.
     const rows = 26;
     final shutterH = sh * sy;
     final shutterBottom = shTop - shutterH;
     final step = shutterH / rows;
     const slatMats = [
-      Mat(0x3a3846, unlit: true),
-      Mat(0x3c3a4b, unlit: true),
+      Mat(0x3a3846, unlit: true, noOutline: true),
+      Mat(0x3c3a4b, unlit: true, noOutline: true),
     ];
+    const seamMat = Mat(0x302e3a, unlit: true, noOutline: true);
+    const seamFraction = 2.5 / (512 / rows);
     for (var i = 0; i < rows; i++) {
       add(
-          boxGeometry(.012, step, sw),
+          boxGeometry(.008, step, sw),
           trs(xFront - .096, shutterBottom + (i + .5) * step, zc),
           slatMats[i % 2]);
+      final seamH = step * seamFraction;
+      add(
+          boxGeometry(.006, seamH, sw),
+          trs(xFront - .104, shutterBottom + (i + 1) * step - seamH / 2, zc),
+          seamMat);
     }
   }
   // bottom rail

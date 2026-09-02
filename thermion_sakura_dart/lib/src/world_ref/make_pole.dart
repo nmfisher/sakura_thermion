@@ -133,3 +133,54 @@ List<Tri> makePole(PoleOpts o) {
     for (final t in baked) Tri(t.a + off, t.b + off, t.c + off, t.normal, t.mat)
   ];
 }
+
+/// Lightweight residential-lane pole used by `plots.js::poleRun`.
+///
+/// Unlike [makePole], this authored variant has no transformer cans or warning
+/// plate and carries its lamp along local Z. District pole runs must use this
+/// shape: substituting the full roadside pole puts large equipment into views
+/// where the Three.js scene has only a slender cable pole.
+List<Tri> makePoleLite(PoleOpts o) {
+  final h = o.h;
+  final dir = o.armDir.toDouble();
+  final parts = <Part>[];
+  void push(Mat mat, ThreeGeom geo, Matrix4 mx) =>
+      parts.add(Part(geo, mx, mat));
+
+  push(_pole, cylGeometry(.10, .17, h, 8), trs(0, h / 2));
+  push(_pole, cylGeometry(.22, .26, .20, 8), trs(0, .10));
+  for (var ai = 0; ai < 2; ai++) {
+    final y = ai == 0 ? h - .60 : h - 1.50;
+    final len = ai == 0 ? 1.90 : 1.50;
+    push(_dark, boxGeometry(.08, .09, len), trs(0, y));
+    push(_metal, boxGeometry(.05, .44, .05), trs(0, y - .27));
+    for (var i = -1; i <= 1; i++) {
+      if (i == 0 && ai == 1) continue;
+      push(_white, cylGeometry(.055, .07, .15, 7),
+          trs(0, y + .12, i * len / 2.4));
+    }
+  }
+  push(_dark, cylGeometry(.04, .04, h - 1.60, 5),
+      trs(dir * .125, (h - 1.60) / 2, .055));
+  if (o.lamp) {
+    push(_metal, boxGeometry(.06, .06, .80), trs(0, h - 2.60, dir * .40));
+    push(_metal, cylGeometry(.055, .055, .50, 8), trs(0, h - 2.60, dir * .78));
+    push(_metal, cylGeometry(0, .26, .20, 12, openEnded: true),
+        trs(0, h - 2.72, dir * .78));
+    push(const Mat(0xfff2d0, unlit: true, noOutline: true),
+        boxGeometry(.20, .05, .20), trs(0, h - 2.84, dir * .78));
+  }
+
+  final baked = bake(parts);
+  final rotation = o.ry == 0 ? null : trs(0, 0, 0, 0, o.ry);
+  final offset = Vector3(o.x, o.y, o.z);
+  return [
+    for (final t in baked)
+      Tri(
+          (rotation?.transformed3(t.a) ?? t.a) + offset,
+          (rotation?.transformed3(t.b) ?? t.b) + offset,
+          (rotation?.transformed3(t.c) ?? t.c) + offset,
+          rotation?.transformed3(t.normal) ?? t.normal,
+          t.mat)
+  ];
+}

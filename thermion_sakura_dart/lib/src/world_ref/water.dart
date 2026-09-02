@@ -241,6 +241,10 @@ const _mMetal = Mat(0xb8bcc6, tint: 0x666090, bands: '3');
 const _mMetalDark = Mat(0x878b96, tint: 0x5c5680, bands: '3');
 const _mTimber = Mat(0x9a7f5e, tint: 0x5c5680, bands: '3');
 const _mTimberDark = Mat(0x6f5943, tint: 0x554d72, bands: '3');
+const _mRope = Mat(0xc1a16b, tint: 0x77647f, bands: '3');
+const _mPierStone = Mat(0xb4aeb6, tint: 0x6f6790, bands: '3');
+const _mPierPaper = Mat(0xf1eadc, unlit: true, noOutline: true);
+const _mPierRed = Mat(0xc95656, tint: 0x704d70, bands: '3');
 // ignore: unused_element
 const _mRock = Mat(0xb4aeb6, tint: 0x6f6790, bands: '3');
 
@@ -867,62 +871,53 @@ List<Tri> buildLakePier() {
     parts.add(Part(boxGeometry(w, h, d), trs(x, y, zz, 0, ry, 0), mat));
   }
 
+  // Exact kohan.js timberDeck axes: w is across, d is along, and ry rotates
+  // the entire bay. Keeping that convention matters because the authored walk
+  // passes each x-sized bay as w and then rotates it by pi/2.
+  void timberDeck(double x, double zz, double w, double d,
+      {double ry = 0, double pileU = 2.2, double pileV = 2.4}) {
+    final c = math.cos(ry), s = math.sin(ry);
+    (double, double) loc(double u, double v) =>
+        (x + u * c + v * s, zz - u * s + v * c);
+    final nu = math.max(2, (w / pileU).round());
+    final nv = math.max(2, (d / pileV).round());
+
+    for (var i = 0; i <= nu; i++) {
+      for (var j = 0; j <= nv; j++) {
+        final p = loc(-w / 2 + .28 + i * (w - .56) / nu,
+            -d / 2 + .28 + j * (d - .56) / nv);
+        final floorY = hillSurfaceY(p.$1, p.$2);
+        final height = math.max(.35, deckY - floorY + .12);
+        parts.add(Part(cylGeometry(.10, .12, height, 7),
+            trs(p.$1, deckY - height / 2 + .06, p.$2), _mTimberDark));
+      }
+    }
+    for (var i = 0; i <= nu; i++) {
+      final u = -w / 2 + .28 + i * (w - .56) / nu;
+      final a = loc(u, -d / 2), b = loc(u, d / 2);
+      timberBox(.14, .19, d, (a.$1 + b.$1) / 2, deckY - .12, (a.$2 + b.$2) / 2,
+          mat: _mTimberDark, ry: ry);
+    }
+    final boardCount = math.max(2, (d / .2).round());
+    for (var k = 0; k < boardCount; k++) {
+      final v = -d / 2 + .08 + k * (d - .16) / (boardCount - 1);
+      final p = loc(0, v);
+      timberBox(w, .055, .168, p.$1, deckY + .03, p.$2, ry: ry);
+    }
+  }
+
   // Six independently supported bays make the changing water depth visible.
-  // Closely spaced cross-planks are the dominant line-work in the reference.
   const walkEnd = endX - 3.2;
   const bays = 6;
   for (var bay = 0; bay < bays; bay++) {
     final x0 = rootX + (walkEnd - rootX) * bay / bays;
     final x1 = rootX + (walkEnd - rootX) * (bay + 1) / bays;
-    final bayLength = x1 - x0;
-    final cx = (x0 + x1) / 2;
-
-    for (final side in [-1.0, 1.0]) {
-      timberBox(bayLength + 0.04, 0.19, 0.14, cx, deckY - 0.12,
-          z + side * (walkW / 2 - 0.28),
-          mat: _mTimberDark);
-    }
-    final boardCount = math.max(2, (bayLength / 0.2).round());
-    for (var k = 0; k < boardCount; k++) {
-      final bx = x0 + 0.08 + k * (bayLength - 0.16) / (boardCount - 1);
-      timberBox(0.168, 0.055, walkW, bx, deckY + 0.03, z);
-    }
+    timberDeck((x0 + x1) / 2, z, x1 - x0 + .04, walkW,
+        ry: math.pi / 2, pileU: 2.0, pileV: 1.9);
   }
 
   // The 5.6 x 4.8 m viewpoint head.
-  for (final side in [-1.0, 0.0, 1.0]) {
-    timberBox(5.6, 0.19, 0.14, headX, deckY - 0.12, z + side * (4.8 / 2 - 0.28),
-        mat: _mTimberDark);
-  }
-  const headBoardCount = 24;
-  for (var k = 0; k < headBoardCount; k++) {
-    final bz = z - 2.4 + 0.08 + k * (4.8 - 0.16) / (headBoardCount - 1);
-    timberBox(5.6, 0.055, 0.168, headX, deckY + 0.03, bz);
-  }
-
-  // Paired piles: shallow at the park edge, progressively taller offshore.
-  for (double px = rootX + 0.28; px <= walkEnd - 0.1; px += 1.9) {
-    final depth = 0.25 + 2.15 * ((px - rootX) / (endX - rootX));
-    final height = deckY - (waterY - depth) + 0.12;
-    for (final side in [-1.0, 1.0]) {
-      parts.add(Part(
-        cylGeometry(0.10, 0.12, height, 7),
-        trs(px, deckY - height / 2 + 0.06, z + side * (walkW / 2 - 0.28)),
-        _mTimberDark,
-      ));
-    }
-  }
-  for (final px in [headX - 2.5, headX, headX + 2.5]) {
-    const depth = 2.35;
-    final height = deckY - (waterY - depth) + 0.12;
-    for (final pz in [z - 2.12, z, z + 2.12]) {
-      parts.add(Part(
-        cylGeometry(0.10, 0.12, height, 7),
-        trs(px, deckY - height / 2 + 0.06, pz),
-        _mTimberDark,
-      ));
-    }
-  }
+  timberDeck(headX, z, 5.6, 4.8, pileU: 2.2, pileV: 2.2);
 
   void rail(double ax, double az, double bx, double bz) {
     final dx = bx - ax, dz = bz - az;
@@ -965,6 +960,70 @@ List<Tri> buildLakePier() {
     parts.add(Part(cylGeometry(0.055, 0.065, 1.5, 7),
         trs(headX - 2.6, deckY + 0.81, lz), _mMetalDark));
     timberBox(0.22, 0.14, 0.22, headX - 2.6, deckY + 1.62, lz, mat: _mMetal);
+  }
+
+  // The head is a viewpoint rather than a bare jetty. These details are part
+  // of kohan.js::buildPier and contribute much of its close-range line work.
+  void bench(double zz) {
+    // makeBench({len: 1.7}), rotated to face out over the lake.
+    final mx = trs(headX + 1.4, deckY + 0.06, zz, 0, -math.pi / 2);
+    for (var k = 0; k < 3; k++) {
+      parts.add(Part(boxGeometry(1.7, 0.055, 0.13),
+          mx * trs(0, 0.46, -0.16 + k * 0.16), _mTimber));
+    }
+    for (final side in [-1.0, 1.0]) {
+      parts.add(Part(boxGeometry(0.08, 0.46, 0.42),
+          mx * trs(side * 0.68, 0.23, -0.04), _mMetalDark));
+    }
+  }
+
+  bench(z - 1.5);
+  bench(z + 1.5);
+
+  // Coiled mooring rope on the south-west bollard.
+  parts.add(Part(torusGeometry(0.17, 0.03, 4, 12, math.pi * 2),
+      trs(headX - 2.2, deckY + 0.10, z + 2.1, math.pi / 2), _mRope));
+
+  // Life ring on a short timber stand.
+  const ringX = headX - 2.5, ringZ = z + 1.9;
+  timberBox(0.08, 1.1, 0.08, ringX, deckY + 0.61, ringZ, mat: _mTimberDark);
+  parts.add(Part(torusGeometry(0.25, 0.065, 5, 16, math.pi * 2),
+      trs(ringX - 0.055, deckY + 0.88, ringZ, 0, -1.4), _mPierRed));
+
+  // Rules board at the head: paired posts, timber frame and paper notice.
+  const noticeX = headX - 1.0, noticeZ = z + 2.15;
+  for (final dx in [-0.62, 0.62]) {
+    timberBox(0.08, 1.65, 0.08, noticeX + dx, deckY + 0.885, noticeZ,
+        mat: _mTimberDark);
+  }
+  timberBox(1.5, 1.0, 0.10, noticeX, deckY + 1.46, noticeZ, mat: _mTimber);
+  timberBox(0.70, 0.54, 0.012, noticeX, deckY + 1.46, noticeZ + 0.057,
+      mat: _mPierPaper);
+  timberBox(1.64, 0.10, 0.20, noticeX, deckY + 2.01, noticeZ,
+      mat: _mTimberDark);
+
+  // White water-level staff on the outer pile, with dark graduation marks.
+  const gaugeX = headX + 2.95, gaugeZ = z + 0.6;
+  timberBox(0.16, 2.2, 0.09, gaugeX, waterY + 0.62, gaugeZ, mat: _mWhite);
+  for (var k = 0; k < 8; k++) {
+    timberBox(k.isEven ? 0.09 : 0.06, 0.025, 0.012, gaugeX,
+        waterY - 0.35 + k * 0.24, gaugeZ + 0.051,
+        mat: _mMetalDark);
+  }
+
+  // Root nameplate and the two treads up from the shore onto the deck.
+  const plateX = rootX - 2.0, plateZ = z + 1.9;
+  timberBox(0.10, 2.2, 0.10, plateX, deckY + 0.55, plateZ, mat: _mTimberDark);
+  timberBox(0.10, 0.72, 1.25, plateX, deckY + 1.30, plateZ, mat: _mTimber);
+  timberBox(0.012, 0.58, 1.08, plateX - 0.056, deckY + 1.30, plateZ,
+      mat: _mPierPaper);
+
+  final shoreY = hillSurfaceY(rootX - 1.6, z);
+  final rise = (deckY - shoreY) / 2;
+  for (var k = 0; k < 2; k++) {
+    final h = rise * (k + 1);
+    timberBox(0.40, h, 2.2, rootX - 0.5 + (k + 0.5) * 0.4, shoreY + h / 2, z,
+        mat: _mPierStone);
   }
 
   return bake(parts);
