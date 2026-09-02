@@ -25,6 +25,9 @@ class SakuraFilamentScene {
   const SakuraFilamentScene({required this.postProcess});
 
   View get outputView => postProcess.view;
+
+  Future<void> prepareForPlatformResize() =>
+      postProcess.prepareForPlatformOutputReplacement();
 }
 
 /// Build the PORTED scene (assembled from ported Dart modules — no extracted

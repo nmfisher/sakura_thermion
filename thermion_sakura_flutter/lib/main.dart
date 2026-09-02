@@ -238,7 +238,8 @@ class ExplorerPage extends StatefulWidget {
   State<ExplorerPage> createState() => _ExplorerPageState();
 }
 
-class _ExplorerPageState extends State<ExplorerPage> {
+class _ExplorerPageState extends State<ExplorerPage>
+    with WidgetsBindingObserver {
   final _log = Logger('Explorer');
   // The path field is an OPTIONAL override (e.g. /tmp/ref_geo.bin for the full
   // scene). Empty = use the bundled asset.
@@ -254,6 +255,7 @@ class _ExplorerPageState extends State<ExplorerPage> {
   bool _building = true;
   bool _ready = false;
   bool _helpOpen = false;
+  SakuraFilamentScene? _portedScene;
 
   Future<void> _load() async {
     final path = _pathCtrl.text.trim();
@@ -275,6 +277,7 @@ class _ExplorerPageState extends State<ExplorerPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     Logger.root.onRecord.listen((r) => debugPrint(r.toString()));
     // The bundled asset loads automatically on startup (see build → ViewerWidget
     // with _source defaulting to the asset). No /tmp dependency.
@@ -282,8 +285,17 @@ class _ExplorerPageState extends State<ExplorerPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pathCtrl.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    final scene = _portedScene;
+    if (scene != null) {
+      unawaited(scene.prepareForPlatformResize());
+    }
   }
 
   @override
@@ -305,7 +317,7 @@ class _ExplorerPageState extends State<ExplorerPage> {
               onViewerAvailable: (viewer) async {
                 try {
                   if (_ported) {
-                    await buildPortedFilamentScene(viewer);
+                    _portedScene = await buildPortedFilamentScene(viewer);
                   } else {
                     final geo = await loadGeoBytes(_source);
                     await buildSakuraScene(viewer, geo);
@@ -350,6 +362,7 @@ class _ExplorerPageState extends State<ExplorerPage> {
                       index: _ported ? 1 : 0,
                       onChanged: (i) => setState(() {
                         _ported = i == 1;
+                        _portedScene = null;
                         _building = true;
                         _ready = false;
                         _error = null;

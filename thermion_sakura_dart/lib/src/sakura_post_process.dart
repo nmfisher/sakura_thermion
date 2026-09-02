@@ -369,6 +369,18 @@ class SakuraPostProcess {
     }
   }
 
+  /// Detaches the post view before Flutter destroys its current platform target.
+  /// Flutter calls this from the window-metrics notification, before its
+  /// debounced texture resize replaces the target.
+  Future<void> prepareForPlatformOutputReplacement() async {
+    if (_destroyed) return;
+    while (_updatingOutputTarget) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    await view.setRenderTarget(null);
+    _outputRT = null;
+  }
+
   Future<void> destroy() async {
     _destroyed = true;
     _outputTargetTimer?.cancel();
