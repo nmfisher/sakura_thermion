@@ -273,6 +273,8 @@ class _ExplorerPageState extends State<ExplorerPage>
   final _log = Logger('Explorer');
   final Set<services.PhysicalKeyboardKey> _heldKeys = {};
   Timer? _walkTimer;
+  Timer? _resizeSettleTimer;
+  Future<void> _resizeOperations = Future<void>.value();
   bool _mouseCaptured = false;
   // The path field is an OPTIONAL override (e.g. /tmp/ref_geo.bin for the full
   // scene). Empty = use the bundled asset.
@@ -323,6 +325,7 @@ class _ExplorerPageState extends State<ExplorerPage>
     WidgetsBinding.instance.removeObserver(this);
     services.HardwareKeyboard.instance.removeHandler(_handleKey);
     _walkTimer?.cancel();
+    _resizeSettleTimer?.cancel();
     unawaited(_setMouseCaptured(false));
     final scene = _portedScene;
     if (scene != null) unawaited(scene.dispose());
@@ -333,9 +336,30 @@ class _ExplorerPageState extends State<ExplorerPage>
   @override
   void didChangeMetrics() {
     final scene = _portedScene;
-    if (scene != null) {
-      unawaited(scene.prepareForPlatformResize());
-    }
+    if (scene == null) return;
+
+    // ThermionWidget replaces its platform texture after a 100 ms debounce.
+    // Stop Filament before detaching the post view, serialize repeated metric
+    // notifications, and keep it stopped until that replacement has settled.
+    final plugin = ThermionFlutterPlugin.instance;
+    plugin.pauseFrameScheduler();
+    _resizeOperations = _resizeOperations.then((_) async {
+      await scene.prepareForPlatformResize();
+    }).catchError((Object error, StackTrace stackTrace) {
+      _log.severe('preparing scene resize failed', error, stackTrace);
+    });
+
+    _resizeSettleTimer?.cancel();
+    _resizeSettleTimer = Timer(const Duration(milliseconds: 350), () {
+      _resizeOperations = _resizeOperations.then((_) async {
+        // The widget's texture operation is itself serialized and normally
+        // completes well inside this settle interval. Adopt its new target
+        // before allowing another frame to enter Filament.
+        await scene.completePlatformResize();
+      }).catchError((Object error, StackTrace stackTrace) {
+        _log.severe('completing scene resize failed', error, stackTrace);
+      }).whenComplete(plugin.resumeFrameScheduler);
+    });
   }
 
   bool _handleKey(services.KeyEvent event) {

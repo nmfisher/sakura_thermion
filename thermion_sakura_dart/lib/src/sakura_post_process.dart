@@ -381,6 +381,29 @@ class SakuraPostProcess {
     _outputRT = null;
   }
 
+  /// Reconnects the post view after the platform surface manager has installed
+  /// its replacement render target. Unlike the periodic safety net, callers
+  /// can await this before resuming the frame scheduler.
+  Future<void> completePlatformOutputReplacement() async {
+    if (_destroyed) return;
+    while (_updatingOutputTarget) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    // ThermionWidget debounces allocation and its native surface bind. Do not
+    // resume rendering merely because an app-side timer elapsed: wait until the
+    // main view actually exposes a platform target distinct from our scene RT.
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (!_destroyed && DateTime.now().isBefore(deadline)) {
+      final candidate = await _mainView.getRenderTarget();
+      if (candidate != null && !identical(candidate, _sceneRT)) {
+        await _adoptPlatformOutputTarget();
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    throw StateError('Timed out waiting for Flutter replacement render target');
+  }
+
   Future<void> destroy() async {
     _destroyed = true;
     _outputTargetTimer?.cancel();

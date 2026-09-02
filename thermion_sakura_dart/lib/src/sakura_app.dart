@@ -901,8 +901,20 @@ class SakuraApp {
     return _capture(postProcess.view);
   }
 
-  Future<void> prepareForPlatformResize() =>
-      postProcess.prepareForPlatformOutputReplacement();
+  Future<void> prepareForPlatformResize() async {
+    // The host pauses its frame scheduler before entering here. Drain any hook
+    // that was already accepted and flush Filament before changing a view's
+    // render target; otherwise a resize can invalidate a handle used by the
+    // in-flight frame.
+    await app.drainRequestFrameHooks();
+    await app.flush();
+    await postProcess.prepareForPlatformOutputReplacement();
+    await app.flush();
+  }
+
+  /// Rebinds the final post-process view after Flutter replaces its surface.
+  Future<void> completePlatformResize() =>
+      postProcess.completePlatformOutputReplacement();
 
   /// Pauses or resumes train, crossing, and petal animation.
   void setPaused(bool paused) => _runtime?.paused = paused;
