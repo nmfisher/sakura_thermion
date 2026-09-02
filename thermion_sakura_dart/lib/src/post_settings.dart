@@ -8,7 +8,9 @@ abstract final class SakuraPostSettings {
   static const warmth = 0.025;
   static const vignette = 0.15;
 
-  static const inkThickness = 2.0;
+  // One-pixel depth taps keep silhouettes crisp at the native output size.
+  // A radius of 2 made opposing samples produce visibly broad, fuzzy bands.
+  static const inkThickness = 1.0;
   static const inkSensitivity = 0.0042;
   static const inkConcave = 0.024;
   static const inkConcaveAmount = 0.418;
