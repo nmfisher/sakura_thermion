@@ -66,6 +66,7 @@ class SakuraApp {
   static Future<SakuraApp> create(
     ThermionViewer viewer, {
     List<String> arguments = const [],
+    Future<Uint8List> Function(String path)? loadPackageAsset,
   }) async {
     final argv = arguments;
     const w = 1600, h = 900;
@@ -384,13 +385,8 @@ class SakuraApp {
     if (referenceAtlasPath != null) {
       atlasBytes = await File(referenceAtlasPath).readAsBytes();
     } else if (referenceBytes == null) {
-      final atlasUri = await Isolate.resolvePackageUri(
-          Uri.parse('package:thermion_sakura_dart/assets/sakura_signs.png'));
-      if (atlasUri == null) {
-        throw StateError(
-            'Could not resolve the Sakura sign atlas package asset');
-      }
-      atlasBytes = await File.fromUri(atlasUri).readAsBytes();
+      atlasBytes =
+          await _loadPackageAsset('assets/sakura_signs.png', loadPackageAsset);
     } else {
       atlasBytes = null;
     }
@@ -702,13 +698,8 @@ class SakuraApp {
     // The live finale post: sakura_post (GRADE_SHADER) via SakuraPostProcess.
     final postMat = await app.createMaterial(sakuraPostFilamat);
     final postInst = await postMat.createInstance() as FFIMaterialInstance;
-    final residualUri = await Isolate.resolvePackageUri(Uri.parse(
-        'package:thermion_sakura_dart/assets/urayama_post_residual.png'));
-    if (residualUri == null) {
-      throw StateError('Could not resolve the urayama post residual asset');
-    }
-    final residualDecoded =
-        img.decodePng(await File.fromUri(residualUri).readAsBytes());
+    final residualDecoded = img.decodePng(await _loadPackageAsset(
+        'assets/urayama_post_residual.png', loadPackageAsset));
     if (residualDecoded == null ||
         residualDecoded.width != w ||
         residualDecoded.height != h) {
@@ -889,4 +880,17 @@ class SakuraApp {
 
   Future<void> prepareForPlatformResize() =>
       postProcess.prepareForPlatformOutputReplacement();
+}
+
+Future<Uint8List> _loadPackageAsset(
+  String path,
+  Future<Uint8List> Function(String path)? loader,
+) async {
+  if (loader != null) return loader(path);
+  final uri = await Isolate.resolvePackageUri(
+      Uri.parse('package:thermion_sakura_dart/$path'));
+  if (uri == null) {
+    throw StateError('Could not resolve package asset: $path');
+  }
+  return File.fromUri(uri).readAsBytes();
 }

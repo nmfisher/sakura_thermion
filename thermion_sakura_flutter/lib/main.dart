@@ -13,6 +13,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -31,8 +32,33 @@ import 'package:thermion_sakura_dart/src/scene.dart';
 import 'package:thermion_sakura_dart/src/world/sky.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
+void _logError(String context, Object error, StackTrace? stackTrace) {
+  stderr.writeln('$context: $error');
+  if (stackTrace != null) stderr.writeln(stackTrace);
+}
+
 void main() {
+  Logger.root.level = Level.ALL;
+  Logger.root.onRecord.listen((record) {
+    stderr.writeln(
+        '${record.time} ${record.level.name} ${record.loggerName}: ${record.message}');
+    if (record.error != null) stderr.writeln(record.error);
+    if (record.stackTrace != null) stderr.writeln(record.stackTrace);
+  });
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    _logError('Unhandled Flutter error', details.exception, details.stack);
+  };
+  PlatformDispatcher.instance.onError = (error, stackTrace) {
+    _logError('Unhandled asynchronous error', error, stackTrace);
+    return true;
+  };
   runApp(const SakuraExplorerApp());
+}
+
+Future<Uint8List> _loadSakuraPackageAsset(String path) async {
+  final data = await rootBundle.load('packages/thermion_sakura_dart/lib/$path');
+  return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
 }
 
 class SakuraExplorerApp extends StatelessWidget {
@@ -278,7 +304,6 @@ class _ExplorerPageState extends State<ExplorerPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    Logger.root.onRecord.listen((r) => debugPrint(r.toString()));
     // The bundled asset loads automatically on startup (see build → ViewerWidget
     // with _source defaulting to the asset). No /tmp dependency.
   }
@@ -325,7 +350,10 @@ class _ExplorerPageState extends State<ExplorerPage>
                 plugin.pauseFrameScheduler();
                 try {
                   if (_ported) {
-                    _portedScene = await SakuraApp.create(viewer);
+                    _portedScene = await SakuraApp.create(
+                      viewer,
+                      loadPackageAsset: _loadSakuraPackageAsset,
+                    );
                   } else {
                     final geo = await loadGeoBytes(_source);
                     await buildSakuraScene(viewer, geo);
