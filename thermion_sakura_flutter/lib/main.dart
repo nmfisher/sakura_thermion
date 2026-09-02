@@ -694,249 +694,256 @@ class _SakuraMenu extends StatelessWidget {
             ),
           ),
           alignment: Alignment.center,
-          child: LayoutBuilder(builder: (context, constraints) {
-            final narrow =
-                constraints.maxWidth <= 520 || constraints.maxHeight <= 570;
-            final medium = !narrow && constraints.maxWidth <= 720;
-            final panelWidth = math.min(medium ? 620.0 : 780.0,
-                constraints.maxWidth - (narrow ? 28 : 48));
-            final artWidth = narrow
-                ? panelWidth
-                : (medium ? 132.0 : panelWidth * .78 / 2.20);
-            // CSS specifies a minimum height; its two-row control strip makes
-            // the intrinsic desktop card slightly taller in the start state.
-            final panelHeight = narrow ? null : (medium ? 450.0 : 462.0);
-            final art = SizedBox(
-              width: artWidth,
-              height: narrow ? 88 : panelHeight,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: red,
-                  border: Border(
-                    right: narrow
-                        ? BorderSide.none
-                        : const BorderSide(color: ink, width: 2),
-                    bottom: narrow
-                        ? const BorderSide(color: ink, width: 2)
-                        : BorderSide.none,
-                  ),
-                ),
-                child: CustomPaint(
-                  painter: const _MenuArtPainter(),
-                  child: Stack(children: [
-                    const Positioned(
-                      left: 21,
-                      top: 20,
-                      child: Text('NIHONMACHI · 05:42 PM',
-                          style: TextStyle(
-                              color: Color(0xDBFFF8EF),
-                              fontFamily: 'monospace',
-                              fontSize: 10,
-                              letterSpacing: 1.8,
-                              fontWeight: FontWeight.w700)),
+          child: CustomPaint(
+            painter: const _MenuBackdropPainter(),
+            child: LayoutBuilder(builder: (context, constraints) {
+              final narrow =
+                  constraints.maxWidth <= 520 || constraints.maxHeight <= 570;
+              final medium = !narrow && constraints.maxWidth <= 720;
+              final panelWidth = math.min(medium ? 620.0 : 780.0,
+                  constraints.maxWidth - (narrow ? 28 : 48));
+              final artWidth = narrow
+                  ? panelWidth
+                  : (medium ? 132.0 : panelWidth * .78 / 2.20);
+              // CSS specifies a minimum height; its two-row control strip makes
+              // the intrinsic desktop card slightly taller in the start state.
+              final panelHeight = narrow ? null : (medium ? 450.0 : 462.0);
+              final art = SizedBox(
+                width: artWidth,
+                height: narrow ? 88 : panelHeight,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: red,
+                    border: Border(
+                      right: narrow
+                          ? BorderSide.none
+                          : const BorderSide(color: ink, width: 2),
+                      bottom: narrow
+                          ? const BorderSide(color: ink, width: 2)
+                          : BorderSide.none,
                     ),
-                    if (!narrow)
+                  ),
+                  child: CustomPaint(
+                    painter: const _MenuArtPainter(),
+                    child: Stack(children: [
                       const Positioned(
-                        right: 17,
-                        top: 18,
-                        child: _VerticalText('春の日本街'),
-                      )
-                    else
-                      const Positioned(
-                        left: 22,
-                        top: 39,
-                        child: Text('春の日本街',
+                        left: 21,
+                        top: 20,
+                        child: Text('NIHONMACHI · 05:42 PM',
                             style: TextStyle(
-                                color: Color(0xFFFFF8EF),
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 3)),
-                      ),
-                    Positioned(
-                      left: narrow ? null : (artWidth - 150) / 2,
-                      right: narrow ? 8 : null,
-                      top: narrow ? -31 : panelHeight! * .46 - 75,
-                      child: Transform.scale(
-                          scale: narrow ? .48 : (medium ? .72 : 1),
-                          alignment:
-                              narrow ? Alignment.centerRight : Alignment.center,
-                          child: const _CrossingMark()),
-                    ),
-                    if (!medium && !narrow)
-                      const Positioned(
-                        left: 22,
-                        bottom: 26,
-                        child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('WALK SLOWLY',
-                                  style: TextStyle(
-                                      color: Color(0xFFFFF8EF),
-                                      fontSize: 11,
-                                      letterSpacing: 1.32,
-                                      fontWeight: FontWeight.w700)),
-                              SizedBox(height: 4),
-                              Text('桜の季節',
-                                  style: TextStyle(
-                                      color: Color(0xFFFFF8EF),
-                                      fontSize: 17,
-                                      letterSpacing: 1,
-                                      fontWeight: FontWeight.w800)),
-                            ]),
-                      ),
-                  ]),
-                ),
-              ),
-            );
-            final copy = ColoredBox(
-              color: paper,
-              child: CustomPaint(
-                painter: const _RuledPaperPainter(),
-                child: Padding(
-                  padding: narrow
-                      ? const EdgeInsets.fromLTRB(34, 26, 24, 22)
-                      : medium
-                          ? const EdgeInsets.fromLTRB(38, 34, 28, 27)
-                          : const EdgeInsets.fromLTRB(46, 42, 46, 34),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Container(width: 24, height: 3, color: red),
-                        const SizedBox(width: 9),
-                        Text(
-                            paused
-                                ? 'INTERMISSION · PAUSED'
-                                : 'A QUIET SPRING WALK',
-                            style: const TextStyle(
-                                color: Color(0xFF746B82),
+                                color: Color(0xDBFFF8EF),
+                                fontFamily: 'monospace',
                                 fontSize: 10,
-                                letterSpacing: 2,
-                                fontWeight: FontWeight.w800)),
-                      ]),
-                      const SizedBox(height: 15),
-                      Text('SAKURA',
-                          style: TextStyle(
-                              color: ink,
-                              height: .9,
-                              fontSize: narrow ? 35 : 52,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -2.3)),
-                      Text('CROSSING',
-                          style: TextStyle(
-                              color: red,
-                              shadows: const [
-                                Shadow(color: ink, offset: Offset(2, 2))
-                              ],
-                              height: .9,
-                              fontSize: narrow ? 35 : 52,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -2.3)),
-                      const SizedBox(height: 14),
-                      const Row(
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
-                          children: [
-                            Text('桜踏切',
-                                style: TextStyle(
-                                    color: ink,
-                                    fontSize: 19,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 5.3)),
-                            SizedBox(width: 12),
-                            Text('SAKURA CROSSING',
-                                style: TextStyle(
-                                    color: Color(0xFF7D7489),
-                                    fontFamily: 'monospace',
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 1.1)),
-                          ]),
-                      SizedBox(height: narrow ? 16 : 22),
-                      Text(
-                        paused
-                            ? 'The scene is waiting where you left it. Adjust the music volume, then continue your walk when you’re ready.'
-                            : '沿着樱花盛开的日本街慢慢散步。穿过铁道、商店街与河岸，\n看一座三渲二小镇在黄昏里醒来。',
-                        style: const TextStyle(
-                            color: Color(0xFF625B70),
-                            fontSize: 13,
-                            height: 1.72),
+                                letterSpacing: 1.8,
+                                fontWeight: FontWeight.w700)),
                       ),
-                      SizedBox(height: narrow ? 14 : 18),
-                      const Wrap(spacing: 7, runSpacing: 7, children: [
-                        _Control(label: 'WASD', action: 'Move'),
-                        _Control(label: 'Mouse', action: 'Look'),
-                        _Control(label: 'E', action: 'Interact'),
-                        _Control(label: 'Shift', action: 'Run'),
-                        _Control(label: 'V', action: 'E-Bike'),
-                        _Control(label: 'M', action: 'Music'),
-                        _Control(label: 'C', action: 'Coordinates'),
-                      ]),
-                      const SizedBox(height: 20),
-                      if (paused) ...[
-                        const _AudioControl(),
-                        const SizedBox(height: 18),
-                      ],
-                      if (narrow) const SizedBox(height: 4) else const Spacer(),
-                      _MenuButton(
-                        enabled: ready,
-                        label: ready
-                            ? (paused ? 'Resume Walk' : '进入日本街')
-                            : 'Building Sakura Crossing…',
-                        onPressed: onEnter,
+                      if (!narrow)
+                        const Positioned(
+                          right: 17,
+                          top: 18,
+                          child: _VerticalText('春の日本街'),
+                        )
+                      else
+                        const Positioned(
+                          left: 22,
+                          top: 39,
+                          child: Text('春の日本街',
+                              style: TextStyle(
+                                  color: Color(0xFFFFF8EF),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 3)),
+                        ),
+                      Positioned(
+                        left: narrow ? null : (artWidth - 150) / 2,
+                        right: narrow ? 8 : null,
+                        top: narrow ? -31 : panelHeight! * .46 - 75,
+                        child: Transform.scale(
+                            scale: narrow ? .48 : (medium ? .72 : 1),
+                            alignment: narrow
+                                ? Alignment.centerRight
+                                : Alignment.center,
+                            child: const _CrossingMark()),
                       ),
-                      if (!narrow) ...[
-                        const SizedBox(height: 16),
-                        Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('3D SCENE · 2D ANIMATION SPIRIT',
-                                  style: _menuFootStyle),
-                              Text(paused ? 'ESC TO PAUSE' : 'CLICK TO BEGIN',
-                                  style: _menuFootStyle),
-                            ]),
-                      ],
-                    ],
+                      if (!medium && !narrow)
+                        const Positioned(
+                          left: 22,
+                          bottom: 26,
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('WALK SLOWLY',
+                                    style: TextStyle(
+                                        color: Color(0xFFFFF8EF),
+                                        fontSize: 11,
+                                        letterSpacing: 1.32,
+                                        fontWeight: FontWeight.w700)),
+                                SizedBox(height: 4),
+                                Text('桜の季節',
+                                    style: TextStyle(
+                                        color: Color(0xFFFFF8EF),
+                                        fontSize: 17,
+                                        letterSpacing: 1,
+                                        fontWeight: FontWeight.w800)),
+                              ]),
+                        ),
+                    ]),
                   ),
                 ),
-              ),
-            );
-            return Container(
-              width: panelWidth,
-              height: panelHeight,
-              decoration: BoxDecoration(
+              );
+              final copy = ColoredBox(
                 color: paper,
-                border: Border.all(color: ink, width: 2),
-                borderRadius: BorderRadius.circular(5),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x3B3A334E), offset: Offset(10, 12)),
-                  BoxShadow(
-                      color: Color(0x66302B42),
-                      blurRadius: 70,
-                      spreadRadius: -28,
-                      offset: Offset(0, 28)),
-                ],
-              ),
-              child: Stack(children: [
-                narrow
-                    ? SingleChildScrollView(
-                        child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [art, copy]))
-                    : Row(children: [art, Expanded(child: copy)]),
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Container(
-                      margin: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                          border: Border.all(color: const Color(0x2E3A334E))),
+                child: CustomPaint(
+                  painter: const _RuledPaperPainter(),
+                  child: Padding(
+                    padding: narrow
+                        ? const EdgeInsets.fromLTRB(34, 26, 24, 22)
+                        : medium
+                            ? const EdgeInsets.fromLTRB(38, 34, 28, 27)
+                            : const EdgeInsets.fromLTRB(46, 42, 46, 34),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Container(width: 24, height: 3, color: red),
+                          const SizedBox(width: 9),
+                          Text(
+                              paused
+                                  ? 'INTERMISSION · PAUSED'
+                                  : 'A QUIET SPRING WALK',
+                              style: const TextStyle(
+                                  color: Color(0xFF746B82),
+                                  fontSize: 10,
+                                  letterSpacing: 2,
+                                  fontWeight: FontWeight.w800)),
+                        ]),
+                        const SizedBox(height: 15),
+                        Text('SAKURA',
+                            style: TextStyle(
+                                color: ink,
+                                height: .9,
+                                fontSize: narrow ? 35 : 52,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -2.3)),
+                        Text('CROSSING',
+                            style: TextStyle(
+                                color: red,
+                                shadows: const [
+                                  Shadow(color: ink, offset: Offset(2, 2))
+                                ],
+                                height: .9,
+                                fontSize: narrow ? 35 : 52,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -2.3)),
+                        const SizedBox(height: 14),
+                        const Row(
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              Text('桜踏切',
+                                  style: TextStyle(
+                                      color: ink,
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 5.3)),
+                              SizedBox(width: 12),
+                              Text('SAKURA CROSSING',
+                                  style: TextStyle(
+                                      color: Color(0xFF7D7489),
+                                      fontFamily: 'monospace',
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.1)),
+                            ]),
+                        SizedBox(height: narrow ? 16 : 22),
+                        Text(
+                          paused
+                              ? 'The scene is waiting where you left it. Adjust the music volume, then continue your walk when you’re ready.'
+                              : '沿着樱花盛开的日本街慢慢散步。穿过铁道、商店街与河岸，\n看一座三渲二小镇在黄昏里醒来。',
+                          style: const TextStyle(
+                              color: Color(0xFF625B70),
+                              fontSize: 13,
+                              height: 1.72),
+                        ),
+                        SizedBox(height: narrow ? 14 : 18),
+                        const Wrap(spacing: 7, runSpacing: 7, children: [
+                          _Control(label: 'WASD', action: 'Move'),
+                          _Control(label: 'Mouse', action: 'Look'),
+                          _Control(label: 'E', action: 'Interact'),
+                          _Control(label: 'Shift', action: 'Run'),
+                          _Control(label: 'V', action: 'E-Bike'),
+                          _Control(label: 'M', action: 'Music'),
+                          _Control(label: 'C', action: 'Coordinates'),
+                        ]),
+                        const SizedBox(height: 20),
+                        if (paused) ...[
+                          const _AudioControl(),
+                          const SizedBox(height: 18),
+                        ],
+                        if (narrow)
+                          const SizedBox(height: 4)
+                        else
+                          const Spacer(),
+                        _MenuButton(
+                          enabled: ready,
+                          label: ready
+                              ? (paused ? 'Resume Walk' : '进入日本街')
+                              : 'Building Sakura Crossing…',
+                          onPressed: onEnter,
+                        ),
+                        if (!narrow) ...[
+                          const SizedBox(height: 16),
+                          Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('3D SCENE · 2D ANIMATION SPIRIT',
+                                    style: _menuFootStyle),
+                                Text(paused ? 'ESC TO PAUSE' : 'CLICK TO BEGIN',
+                                    style: _menuFootStyle),
+                              ]),
+                        ],
+                      ],
                     ),
                   ),
                 ),
-              ]),
-            );
-          }),
+              );
+              return Container(
+                width: panelWidth,
+                height: panelHeight,
+                decoration: BoxDecoration(
+                  color: paper,
+                  border: Border.all(color: ink, width: 2),
+                  borderRadius: BorderRadius.circular(5),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x3B3A334E), offset: Offset(10, 12)),
+                    BoxShadow(
+                        color: Color(0x66302B42),
+                        blurRadius: 70,
+                        spreadRadius: -28,
+                        offset: Offset(0, 28)),
+                  ],
+                ),
+                child: Stack(children: [
+                  narrow
+                      ? SingleChildScrollView(
+                          child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [art, copy]))
+                      : Row(children: [art, Expanded(child: copy)]),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        margin: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                            border: Border.all(color: const Color(0x2E3A334E))),
+                      ),
+                    ),
+                  ),
+                ]),
+              );
+            }),
+          ),
         ),
       ),
     );
@@ -1199,6 +1206,46 @@ class _MenuArtPainter extends CustomPainter {
           ..color = const Color(0xFF3A334E)
           ..strokeWidth = 2);
     canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _MenuBackdropPainter extends CustomPainter {
+  const _MenuBackdropPainter();
+  @override
+  void paint(Canvas canvas, Size size) {
+    void dots(double tileW, double tileH, double ox, double oy, double radius,
+        Color color) {
+      final paint = Paint()..color = color;
+      for (double x = ox; x < size.width + tileW; x += tileW) {
+        for (double y = oy; y < size.height + tileH; y += tileH) {
+          canvas.drawCircle(Offset(x, y), radius, paint);
+        }
+      }
+    }
+
+    dots(92, 86, 11, 14, 2, const Color(0x9EFFF5EE));
+    dots(138, 126, 113, 30, 3, const Color(0xA3FFD5DB));
+    dots(108, 116, 80, 95, 2, const Color(0x94FFF4EB));
+    dots(154, 142, 37, 108, 2, const Color(0x8AFFCFD8));
+
+    final diameter = math.max(420.0, size.width * .42);
+    final center = Offset(size.width + diameter * .32, -diameter * .05);
+    final ring = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..color = const Color(0x24463E5B);
+    canvas.drawCircle(center, diameter / 2, ring);
+    ring
+      ..strokeWidth = 34
+      ..color = const Color(0x14FFF4EB);
+    canvas.drawCircle(center, diameter / 2 + 18, ring);
+    ring
+      ..strokeWidth = 36
+      ..color = const Color(0x0FD16D78);
+    canvas.drawCircle(center, diameter / 2 + 70, ring);
   }
 
   @override
