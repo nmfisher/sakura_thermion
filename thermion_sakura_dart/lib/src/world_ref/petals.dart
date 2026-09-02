@@ -178,7 +178,7 @@ List<Tri> _buildFallenPetals() {
 /// 980 petals at their initial scattered positions.  The reference runs 40
 /// settle steps then animates per-frame; here we emit the first-frame
 /// positions after the reference's 40 × 0.1 s zero-gust settle steps.
-List<Tri> _buildFallingPetals() {
+List<Tri> _buildFallingPetals({int groupCount = 1, int groupIndex = 0}) {
   const count = 980, top = 6.8, z0 = -30.0, z1 = 34.0, half = 9.5;
   final rng = RngKit(8123);
   final geo = _petalGeometry(0.185, 0.135);
@@ -251,13 +251,16 @@ List<Tri> _buildFallingPetals() {
   update(captureDt, near * near, 1);
 
   return bake([
-    for (final p in petals)
-      Part(
-        geo,
-        composePRS(Vector3(p.x, p.y, p.z),
-            Quaternion.axisAngle(p.spin, p.angle), Vector3.all(p.scale)),
-        p.mat,
-      ),
+    for (final indexed in petals.indexed)
+      if (indexed.$1 % groupCount == groupIndex)
+        Part(
+          geo,
+          composePRS(
+              Vector3(indexed.$2.x, indexed.$2.y, indexed.$2.z),
+              Quaternion.axisAngle(indexed.$2.spin, indexed.$2.angle),
+              Vector3.all(indexed.$2.scale)),
+          indexed.$2.mat,
+        ),
   ]);
 }
 
@@ -304,3 +307,7 @@ List<Tri> buildPetals({
     if (includeFalling) ..._buildFallingPetals(),
   ];
 }
+
+/// A deterministic subset of the falling-petal cloud for runtime animation.
+List<Tri> buildFallingPetalGroup(int groupIndex, {int groupCount = 8}) =>
+    _buildFallingPetals(groupCount: groupCount, groupIndex: groupIndex);

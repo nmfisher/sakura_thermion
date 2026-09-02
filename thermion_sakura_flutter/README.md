@@ -7,6 +7,12 @@ the maximum-fidelity Dart renderer: geometry, camera, lighting, native Filament
 shadow pass, depth ink, anime grade, vignette, and FXAA are shared rather than
 reimplemented by the Flutter wrapper.
 
+The Flutter host enables Sakura's shared runtime mode: the train circles the
+planet at the reference speed, the crossing booms close and reopen from the
+train's approach distance, falling blossom drifts in independently phased
+groups, and the walking camera is constrained to the planet terrain. The
+reference start/pause card is shown at launch and returns with Escape.
+
 The optional reference-geometry mode loads extracted `ref_geo*.bin` geometry
 into a live Thermion viewport. It remains a separate diagnostic path and uses
 the legacy CPU `SunShadowMap`.
@@ -35,12 +41,12 @@ top-bar path field at a raw `ref_geo.bin` (or `.bin.gz`) on disk (e.g.
 The raw `ref_geo_r60.bin` is ~110 MB (over Git's per-file push limit), which is
 why the bundled copy is gzip-compressed (it decompresses at load).
 
-## Controls (Free-Flight)
+## Controls
 
 - **Drag** — look around
 - **WASD / arrows** — move
-- **Q / E** (or Page Up/Down) — up / down
 - **Scroll** — dolly
+- **Escape** — pause / resume menu
 
 ## How it maps to the code
 

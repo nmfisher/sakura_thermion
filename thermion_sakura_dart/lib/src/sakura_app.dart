@@ -19,7 +19,11 @@ import 'package:thermion_sakura_dart/src/post_settings.dart';
 import 'package:thermion_sakura_dart/src/ref_geo.dart';
 import 'package:thermion_sakura_dart/src/scene.dart';
 import 'package:thermion_sakura_dart/src/world/sky.dart';
+import 'package:thermion_sakura_dart/src/world_ref/hills.dart';
+import 'package:thermion_sakura_dart/src/world_ref/petals.dart';
 import 'package:thermion_sakura_dart/src/world_ref/ported_scene.dart';
+import 'package:thermion_sakura_dart/src/world_ref/railway.dart';
+import 'package:thermion_sakura_dart/src/world_ref/street.dart';
 import 'package:thermion_sakura_dart/src/world_ref/train.dart';
 
 Future<void> _writeCapturePng(
@@ -51,15 +55,17 @@ class SakuraApp {
   final SakuraPostProcess postProcess;
   final int width;
   final int height;
+  final _SakuraRuntime? _runtime;
 
-  const SakuraApp._({
+  SakuraApp._({
     required this.app,
     required this.viewer,
     required this.swapChain,
     required this.postProcess,
     required this.width,
     required this.height,
-  });
+    required _SakuraRuntime? runtime,
+  }) : _runtime = runtime;
 
   View get outputView => postProcess.view;
 
@@ -67,6 +73,8 @@ class SakuraApp {
     ThermionViewer viewer, {
     List<String> arguments = const [],
     Future<Uint8List> Function(String path)? loadPackageAsset,
+    bool runtimeAnimations = false,
+    bool groundedCamera = false,
   }) async {
     final argv = arguments;
     const w = 1600, h = 900;
@@ -181,6 +189,9 @@ class SakuraApp {
                 includePetals: !argv.contains('--no-petals'),
                 includeFallenPetals: !argv.contains('--no-fallen-petals'),
                 includeFallingPetals: argv.contains('--with-falling-petals'),
+                includeTrain: !runtimeAnimations,
+                includeCrossingBooms: !runtimeAnimations,
+                includeActiveCrossingLamps: !runtimeAnimations,
                 includeReferenceShrubs:
                     argv.contains('--with-reference-shrubs'),
                 includeShopShutterGrooves:
@@ -838,6 +849,17 @@ class SakuraApp {
     await app.flush();
     await app.setClearOptions(fog.x, fog.y, fog.z, 0.0);
 
+    final runtime = runtimeAnimations && referenceBytes == null
+        ? await _SakuraRuntime.create(v1, toonInst,
+            groundedCamera: groundedCamera,
+            animateTrain: !argv.contains('--no-runtime-train'),
+            animateBooms: !argv.contains('--no-runtime-booms'),
+            animatePetals: !argv.contains('--no-runtime-petals'))
+        : groundedCamera
+            ? await _SakuraRuntime.create(v1, toonInst,
+                groundedCamera: true, animateWorld: false)
+            : null;
+
     pp.followPlatformOutputTarget();
     return SakuraApp._(
       app: app,
@@ -846,6 +868,7 @@ class SakuraApp {
       postProcess: pp,
       width: w,
       height: h,
+      runtime: runtime,
     );
   }
 
@@ -880,6 +903,15 @@ class SakuraApp {
 
   Future<void> prepareForPlatformResize() =>
       postProcess.prepareForPlatformOutputReplacement();
+
+  /// Pauses or resumes train, crossing, and petal animation.
+  void setPaused(bool paused) => _runtime?.paused = paused;
+
+  /// Returns the walking camera to the authored opening view.
+  Future<void> resetCamera() async => _runtime?.resetCamera();
+
+  /// Detaches frame callbacks owned by the optional realtime runtime.
+  Future<void> dispose() async => _runtime?.dispose();
 }
 
 Future<Uint8List> _loadPackageAsset(
@@ -894,3 +926,219 @@ Future<Uint8List> _loadPackageAsset(
   }
   return File.fromUri(uri).readAsBytes();
 }
+
+class _SakuraRuntime {
+  _SakuraRuntime._(this.viewer, this.camera, this.train, this.booms, this.lamps,
+      this.petalGroups, this.groundedCamera);
+
+  final ThermionViewerFFI viewer;
+  final Camera camera;
+  final ThermionAsset? train;
+  final List<ThermionAsset> booms;
+  final List<_CrossingLamp> lamps;
+  final List<ThermionAsset> petalGroups;
+  final bool groundedCamera;
+  final Stopwatch _clock = Stopwatch();
+  double _trainX = .392;
+  double _armT = 0;
+  double _time = 0;
+  double _lastSeconds = 0;
+  bool paused = false;
+  bool _updating = false;
+  late final Matrix4 _spawnCamera;
+
+  static Future<_SakuraRuntime> create(
+    ThermionViewerFFI viewer,
+    MaterialInstance material, {
+    required bool groundedCamera,
+    bool animateWorld = true,
+    bool animateTrain = true,
+    bool animateBooms = true,
+    bool animatePetals = true,
+  }) async {
+    ThermionAsset? train;
+    final booms = <ThermionAsset>[];
+    final lamps = <_CrossingLamp>[];
+    final petals = <ThermionAsset>[];
+
+    Future<ThermionAsset> add(List<Tri> tris, {bool casts = false}) async {
+      final packed = trisToPacked(tris);
+      final asset = await viewer.createGeometry(
+          Geometry(packed.positions, packed.indices,
+              normals: packed.normals,
+              colors: packed.colors,
+              uvs: packed.uvs,
+              uvs1: packed.uvs1,
+              attribute0: packed.attribute0),
+          materialInstances: [material]);
+      await asset.setCastShadows(casts);
+      await asset.setReceiveShadows(false);
+      return asset;
+    }
+
+    if (animateWorld) {
+      if (animateTrain) {
+        // The source bends the full train onto the equator once, then advances
+        // it by rotating that curved mesh about the planet's Z axis.
+        train =
+            await add(
+                wrapOnPlanet(
+                    buildTrain(
+                        x: 0,
+                        bodyColor: 0xebe3d5,
+                        stripeColor: 0x0771c1,
+                        windowColor: 0x3b4257),
+                    maxEdge: 4),
+                casts: true);
+      }
+      if (animateBooms) {
+        final boom = buildCrossingBoom(gateYellowColor: 0xf2b727);
+        booms
+          ..add(await add(boom, casts: true))
+          ..add(await add(boom, casts: true));
+        final lampGeometry = buildCrossingLamp();
+        final cx = centerX(0);
+        for (final corner in const [
+          (-1, 1, true),
+          (1, -1, true),
+          (1, 1, false),
+          (-1, -1, false),
+        ]) {
+          final sx = corner.$1, sz = corner.$2;
+          final rootX = cx + sx * (roadHalf + .42);
+          final mastX = corner.$3 ? sx * .44 : 0.0;
+          final yaw = sz > 0 ? 0.0 : math.pi;
+          for (var lens = 0; lens < 2; lens++) {
+            final lx = lens == 0 ? -.28 : .28;
+            final worldX = rootX + mastX + (sz > 0 ? lx : -lx);
+            final worldZ = sz * 2.95 + sz * (.02 + .145);
+            lamps.add(_CrossingLamp(await add(lampGeometry), lens,
+                _planetFrame(worldX, 2.55, worldZ, yaw: yaw)));
+          }
+        }
+      }
+      if (animatePetals) {
+        for (var group = 0; group < 8; group++) {
+          petals.add(await add(buildFallingPetalGroup(group)));
+        }
+      }
+    }
+
+    final runtime = _SakuraRuntime._(viewer, await viewer.getActiveCamera(),
+        train, booms, lamps, petals, groundedCamera);
+    runtime._spawnCamera = await runtime.camera.getModelMatrix();
+    runtime._clock.start();
+    viewer.app.registerRequestFrameHook(runtime._onFrame);
+    await runtime._onFrame();
+    return runtime;
+  }
+
+  Future<void> resetCamera() => camera.setModelMatrix(_spawnCamera.clone());
+
+  Future<void> dispose() async {
+    _clock.stop();
+    await viewer.app.unregisterRequestFrameHook(_onFrame);
+  }
+
+  Future<void> _onFrame() async {
+    if (_updating) return;
+    _updating = true;
+    try {
+      final seconds = _clock.elapsedMicroseconds / 1000000;
+      final dt = math.min(.05, math.max(0.0, seconds - _lastSeconds));
+      _lastSeconds = seconds;
+      if (!paused) {
+        _time += dt;
+        await _animate(dt);
+      }
+      if (groundedCamera) await _groundCamera();
+    } catch (error, stackTrace) {
+      stderr.writeln('Sakura runtime update failed: $error');
+      stderr.writeln(stackTrace);
+    } finally {
+      _updating = false;
+    }
+  }
+
+  Future<void> _animate(double dt) async {
+    const circumference = math.pi * 2 * planetRadius;
+    _trainX = ((_trainX + 23.5 * dt + circumference / 2) % circumference) -
+        circumference / 2;
+    if (train != null) {
+      await train!.setTransform(_trainPlanetTransform(_trainX));
+    }
+
+    final ahead = -_trainX;
+    final closing = ahead < 165 && ahead > -62;
+    _armT = (_armT + dt / (closing ? 3.4 : -3.0)).clamp(0.0, 1.0);
+    final eased =
+        _armT < .5 ? 2 * _armT * _armT : 1 - math.pow(-2 * _armT + 2, 2) / 2;
+    final angle = (1 - eased) * (math.pi / 2) * .99 + .004;
+    if (booms.length == 2) {
+      const gateZ = 2.95;
+      const hingeY = .2 + .92 + .12;
+      final cx = centerX(0);
+      await booms[0].setTransform(_planetFrame(
+          cx - roadHalf - .42, hingeY, gateZ,
+          yaw: 0, roll: angle));
+      await booms[1].setTransform(_planetFrame(
+          cx + roadHalf + .42, hingeY, -gateZ,
+          yaw: math.pi, roll: angle));
+    }
+
+    final warningActive = closing || _armT > .02;
+    final blinkPhase = (_time * 1.6) % 1;
+    for (final lamp in lamps) {
+      final visible = warningActive &&
+          (lamp.phase == 0 ? blinkPhase < .5 : blinkPhase >= .5);
+      await lamp.asset.setTransform(lamp.transform *
+          Matrix4.diagonal3Values(
+              visible ? 1 : .001, visible ? 1 : .001, visible ? 1 : .001));
+    }
+
+    for (var i = 0; i < petalGroups.length; i++) {
+      final phase = (_time * (.48 + i * .035) + i * 1.07) % 8.2;
+      final drift = math.sin(_time * (.55 + i * .07) + i) * .32;
+      await petalGroups[i]
+          .setTransform(Matrix4.translationValues(drift, -phase, 0));
+    }
+  }
+
+  Future<void> _groundCamera() async {
+    final matrix = await camera.getModelMatrix();
+    final position = matrix.getTranslation();
+    final radial = position - Vector3(0, -planetRadius, 0);
+    if (radial.length2 < 1) return;
+    radial.normalize();
+    final z = math.asin(radial.z.clamp(-1.0, 1.0)) * planetRadius;
+    final x = math.atan2(radial.x, radial.y) * planetRadius;
+    final ground = math.max(groundY(z), hillSurfaceY(x, z));
+    final desired = planetPosition(x, ground + 1.62, z);
+    matrix.setTranslation(desired);
+    await camera.setModelMatrix(matrix);
+  }
+}
+
+class _CrossingLamp {
+  const _CrossingLamp(this.asset, this.phase, this.transform);
+  final ThermionAsset asset;
+  final int phase;
+  final Matrix4 transform;
+}
+
+Matrix4 _planetFrame(double x, double y, double z,
+    {double yaw = 0, double roll = 0}) {
+  final up = Vector3.zero(), east = Vector3.zero(), north = Vector3.zero();
+  planetBasis(x, z, up, east, north);
+  final frame = Matrix4.identity();
+  frame.setColumn(0, Vector4(east.x, east.y, east.z, 0));
+  frame.setColumn(1, Vector4(up.x, up.y, up.z, 0));
+  frame.setColumn(2, Vector4(north.x, north.y, north.z, 0));
+  frame.setTranslation(planetPosition(x, y, z));
+  return frame * Matrix4.rotationY(yaw) * Matrix4.rotationZ(roll);
+}
+
+Matrix4 _trainPlanetTransform(double x) =>
+    Matrix4.translationValues(0, -planetRadius, 0) *
+    Matrix4.rotationZ(-x / planetRadius) *
+    Matrix4.translationValues(0, planetRadius, 0);

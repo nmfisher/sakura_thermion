@@ -17,8 +17,9 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' as services;
 import 'package:logging/logging.dart';
-import 'package:thermion_dart/thermion_dart.dart' hide VoidCallback;
+import 'package:thermion_dart/thermion_dart.dart' hide Transform, VoidCallback;
 import 'package:thermion_dart/src/filament/src/implementation/ffi_color_grading.dart';
 import 'package:thermion_sakura_dart/thermion_sakura_dart.dart';
 import 'package:thermion_dart/src/filament/src/implementation/ffi_filament_app.dart';
@@ -281,6 +282,8 @@ class _ExplorerPageState extends State<ExplorerPage>
   bool _building = true;
   bool _ready = false;
   bool _helpOpen = false;
+  bool _menuOpen = true;
+  bool _started = false;
   SakuraApp? _portedScene;
 
   Future<void> _load() async {
@@ -304,6 +307,7 @@ class _ExplorerPageState extends State<ExplorerPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    services.HardwareKeyboard.instance.addHandler(_handleKey);
     // The bundled asset loads automatically on startup (see build → ViewerWidget
     // with _source defaulting to the asset). No /tmp dependency.
   }
@@ -311,6 +315,9 @@ class _ExplorerPageState extends State<ExplorerPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    services.HardwareKeyboard.instance.removeHandler(_handleKey);
+    final scene = _portedScene;
+    if (scene != null) unawaited(scene.dispose());
     _pathCtrl.dispose();
     super.dispose();
   }
@@ -321,6 +328,46 @@ class _ExplorerPageState extends State<ExplorerPage>
     if (scene != null) {
       unawaited(scene.prepareForPlatformResize());
     }
+  }
+
+  bool _handleKey(services.KeyEvent event) {
+    final key = event.physicalKey;
+    if (_menuOpen && event is! services.KeyUpEvent) {
+      if (key == services.PhysicalKeyboardKey.keyW ||
+          key == services.PhysicalKeyboardKey.keyA ||
+          key == services.PhysicalKeyboardKey.keyS ||
+          key == services.PhysicalKeyboardKey.keyD ||
+          key == services.PhysicalKeyboardKey.shiftLeft ||
+          key == services.PhysicalKeyboardKey.shiftRight) {
+        return true;
+      }
+    }
+    if (event is services.KeyDownEvent &&
+        key == services.PhysicalKeyboardKey.keyR &&
+        !_menuOpen) {
+      final scene = _portedScene;
+      if (scene != null) unawaited(scene.resetCamera());
+      return true;
+    }
+    if (event is! services.KeyDownEvent ||
+        key != services.PhysicalKeyboardKey.escape) {
+      return false;
+    }
+    if (!_ready) return false;
+    setState(() {
+      _started = true;
+      _menuOpen = !_menuOpen;
+    });
+    _portedScene?.setPaused(_menuOpen);
+    return true;
+  }
+
+  void _enterScene() {
+    setState(() {
+      _started = true;
+      _menuOpen = false;
+    });
+    _portedScene?.setPaused(false);
   }
 
   @override
@@ -353,23 +400,28 @@ class _ExplorerPageState extends State<ExplorerPage>
                     _portedScene = await SakuraApp.create(
                       viewer,
                       loadPackageAsset: _loadSakuraPackageAsset,
+                      runtimeAnimations: true,
+                      groundedCamera: true,
                     );
+                    _portedScene!.setPaused(_menuOpen);
                   } else {
                     final geo = await loadGeoBytes(_source);
                     await buildSakuraScene(viewer, geo);
                   }
-                  if (mounted)
+                  if (mounted) {
                     setState(() {
                       _building = false;
                       _ready = true;
                     });
+                  }
                 } catch (e, st) {
                   _log.severe('scene build failed', e, st);
-                  if (mounted)
+                  if (mounted) {
                     setState(() {
                       _building = false;
                       _error = '$e';
                     });
+                  }
                 } finally {
                   plugin.resumeFrameScheduler();
                 }
@@ -398,13 +450,17 @@ class _ExplorerPageState extends State<ExplorerPage>
                     _Segmented(
                       labels: const ['Reference', 'Ported'],
                       index: _ported ? 1 : 0,
-                      onChanged: (i) => setState(() {
-                        _ported = i == 1;
-                        _portedScene = null;
-                        _building = true;
-                        _ready = false;
-                        _error = null;
-                      }),
+                      onChanged: (i) {
+                        final scene = _portedScene;
+                        if (scene != null) unawaited(scene.dispose());
+                        setState(() {
+                          _ported = i == 1;
+                          _portedScene = null;
+                          _building = true;
+                          _ready = false;
+                          _error = null;
+                        });
+                      },
                     ),
                     const SizedBox(width: 10),
                     if (!_ported) ...[
@@ -474,7 +530,7 @@ class _ExplorerPageState extends State<ExplorerPage>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.6),
+                    color: Colors.black.withValues(alpha: 0.6),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: _building
@@ -503,7 +559,7 @@ class _ExplorerPageState extends State<ExplorerPage>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.5),
+                  color: Colors.black.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Text('drag = look · WASD = move · scroll = dolly',
@@ -515,8 +571,230 @@ class _ExplorerPageState extends State<ExplorerPage>
             ),
           if (_helpOpen)
             _HelpOverlay(onClose: () => setState(() => _helpOpen = false)),
+          if (_menuOpen)
+            _SakuraMenu(
+              paused: _started,
+              ready: _ready,
+              onEnter: _enterScene,
+            ),
         ],
       ),
+    );
+  }
+}
+
+class _SakuraMenu extends StatelessWidget {
+  const _SakuraMenu({
+    required this.paused,
+    required this.ready,
+    required this.onEnter,
+  });
+
+  final bool paused;
+  final bool ready;
+  final VoidCallback onEnter;
+
+  @override
+  Widget build(BuildContext context) {
+    const ink = Color(0xFF3A334E);
+    const paper = Color(0xFFFBF5EA);
+    const red = Color(0xFFCF5C62);
+    return Positioned.fill(
+      child: Container(
+        color: const Color(0xAA77788F),
+        alignment: Alignment.center,
+        child: LayoutBuilder(builder: (context, constraints) {
+          final compact = constraints.maxWidth < 680;
+          final art = Container(
+            width: compact ? double.infinity : 245,
+            height: compact ? 145 : double.infinity,
+            decoration: const BoxDecoration(
+              color: red,
+              border: Border(right: BorderSide(color: ink, width: 2)),
+            ),
+            child: Stack(children: [
+              const Positioned(
+                left: 20,
+                top: 18,
+                child: Text('NIHONMACHI · 05:42 PM',
+                    style: TextStyle(
+                        color: Color(0xFFFFF8EF),
+                        fontSize: 10,
+                        letterSpacing: 1.5,
+                        fontWeight: FontWeight.w700)),
+              ),
+              Center(child: _CrossingMark(compact: compact)),
+              const Positioned(
+                left: 20,
+                bottom: 20,
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('WALK SLOWLY',
+                          style: TextStyle(
+                              color: Color(0xFFFFF8EF),
+                              fontSize: 10,
+                              letterSpacing: 1.5,
+                              fontWeight: FontWeight.bold)),
+                      Text('桜の季節',
+                          style: TextStyle(
+                              color: Color(0xFFFFF8EF),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800)),
+                    ]),
+              ),
+            ]),
+          );
+          final copy = Padding(
+            padding: const EdgeInsets.fromLTRB(42, 38, 42, 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(paused ? 'INTERMISSION · PAUSED' : 'A QUIET SPRING WALK',
+                    style: const TextStyle(
+                        color: Color(0xFF746B82),
+                        fontSize: 10,
+                        letterSpacing: 2,
+                        fontWeight: FontWeight.w800)),
+                const SizedBox(height: 14),
+                const Text('SAKURA',
+                    style: TextStyle(
+                        color: ink,
+                        height: .9,
+                        fontSize: 45,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -2)),
+                const Text('CROSSING',
+                    style: TextStyle(
+                        color: red,
+                        height: .95,
+                        fontSize: 45,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -2)),
+                const SizedBox(height: 10),
+                const Text('桜踏切   SAKURA CROSSING',
+                    style: TextStyle(
+                        color: ink,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1)),
+                const SizedBox(height: 18),
+                Text(
+                  paused
+                      ? 'The scene is waiting where you left it. Continue your walk when you’re ready.'
+                      : '沿着樱花盛开的日本街慢慢散步。穿过铁道、商店街与河岸，看一座三渲二小镇在黄昏里醒来。',
+                  style:
+                      const TextStyle(color: Color(0xFF655D70), height: 1.45),
+                ),
+                const SizedBox(height: 18),
+                const Wrap(spacing: 16, runSpacing: 8, children: [
+                  _Control(label: 'WASD', action: 'Move'),
+                  _Control(label: 'Mouse', action: 'Look'),
+                  _Control(label: 'Scroll', action: 'Dolly'),
+                  _Control(label: 'R', action: 'Opening view'),
+                  _Control(label: 'Esc', action: 'Pause'),
+                ]),
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: red,
+                      foregroundColor: const Color(0xFFFFF8EF),
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(3)),
+                          side: BorderSide(color: ink, width: 2)),
+                    ),
+                    onPressed: ready ? onEnter : null,
+                    child: Text(ready
+                        ? (paused ? 'Resume Walk   →' : '进入日本街   →')
+                        : 'Building Sakura Crossing…'),
+                  ),
+                ),
+                const SizedBox(height: 13),
+                Text(paused ? 'ESC TO RESUME' : 'CLICK TO BEGIN',
+                    style: const TextStyle(
+                        color: Color(0xFF857C8F),
+                        fontSize: 9,
+                        letterSpacing: 1.5,
+                        fontWeight: FontWeight.bold)),
+              ],
+            ),
+          );
+          return Container(
+            width: math.min(780, constraints.maxWidth - 40),
+            constraints: const BoxConstraints(maxHeight: 560),
+            decoration: BoxDecoration(
+              color: paper,
+              border: Border.all(color: ink, width: 2),
+              borderRadius: BorderRadius.circular(5),
+              boxShadow: const [
+                BoxShadow(color: Color(0x663A334E), offset: Offset(10, 12))
+              ],
+            ),
+            child: compact
+                ? SingleChildScrollView(
+                    child: Column(
+                        mainAxisSize: MainAxisSize.min, children: [art, copy]))
+                : Row(children: [art, Expanded(child: copy)]),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _Control extends StatelessWidget {
+  const _Control({required this.label, required this.action});
+  final String label;
+  final String action;
+  @override
+  Widget build(BuildContext context) =>
+      Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(label,
+            style: const TextStyle(
+                color: Color(0xFF3A334E), fontWeight: FontWeight.w900)),
+        const SizedBox(width: 5),
+        Text(action,
+            style: const TextStyle(color: Color(0xFF81798B), fontSize: 12)),
+      ]);
+}
+
+class _CrossingMark extends StatelessWidget {
+  const _CrossingMark({required this.compact});
+  final bool compact;
+  @override
+  Widget build(BuildContext context) {
+    Widget bar(double angle) => Transform.rotate(
+          angle: angle,
+          child: Container(
+            width: compact ? 105 : 145,
+            height: 20,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7E9),
+              border: Border.all(color: const Color(0xFF3A334E), width: 2),
+            ),
+          ),
+        );
+    return SizedBox(
+      width: 155,
+      height: 155,
+      child: Stack(alignment: Alignment.center, children: [
+        bar(math.pi / 4),
+        bar(-math.pi / 4),
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+              color: const Color(0xFF3A334E),
+              borderRadius: BorderRadius.circular(20)),
+          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+            CircleAvatar(radius: 8, backgroundColor: Color(0xFFE77779)),
+            SizedBox(width: 7),
+            CircleAvatar(radius: 8, backgroundColor: Color(0xFFF5C7B8)),
+          ]),
+        ),
+      ]),
     );
   }
 }

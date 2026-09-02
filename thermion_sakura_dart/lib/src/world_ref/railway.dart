@@ -37,6 +37,33 @@ const _wireMat = Mat(0x878b96, tint: 0x4a4468, bands: '2');
 const _grooveMat = Mat(0x4d4757, tint: 0x413c58, bands: '2');
 const _lineYellow = Mat(0xf2c53d, tint: 0x8f7050, bands: '2');
 
+/// One crossing boom authored about its hinge at the origin, extending along
+/// local +X. Runtime hosts place and rotate this as a separate Filament entity.
+List<Tri> buildCrossingBoom({int gateYellowColor = 0xf4c033}) {
+  const seg = .52;
+  final length = roadHalf * 2 + .5;
+  final count = (length / seg).round();
+  final yellow = Mat(gateYellowColor, tint: 0x8f7050, bands: '3');
+  final parts = <Part>[];
+  for (var i = 0; i < count; i++) {
+    final x = seg * (i + .5);
+    parts.add(Part(boxGeometry(seg, .17, .09), trs(x, 0, 0),
+        i.isEven ? yellow : _gateBlack));
+    if (i > 0 && i < count - 1 && i % 3 == 1) {
+      parts
+        ..add(Part(boxGeometry(.03, .12, .03), trs(x, -.05, .06), _metalDark))
+        ..add(Part(boxGeometry(.11, .11, .07), trs(x, -.14, .06), _signalOff));
+    }
+  }
+  return bake(parts);
+}
+
+/// Bright face of a crossing warning lamp, centred at the local origin.
+List<Tri> buildCrossingLamp() => bake([
+      Part(cylGeometry(.13, .13, .026, 14), trs(0, 0, 0, math.pi / 2),
+          _signalRed),
+    ]);
+
 Matrix4 _mul(Matrix4 a, Matrix4 b) => a.clone()..multiply(b);
 
 void _addCrossing(
@@ -59,7 +86,8 @@ void _tubeBetween(
 /// The animation starts with the two booms raised, so their pivot rotation is
 /// just under 90 degrees. Text printed on the sign board is deferred, but the
 /// board, crossbucks, signals, lamps, cabinets, and kerbs are all geometric.
-void _buildCrossing(List<Part> parts, List<Tri> mapped, Mat gateYellow) {
+void _buildCrossing(List<Part> parts, List<Tri> mapped, Mat gateYellow,
+    {bool includeBooms = true, bool includeActiveLamps = true}) {
   final cx = centerX(0);
   final gy = 0.0;
 
@@ -92,15 +120,17 @@ void _buildCrossing(List<Part> parts, List<Tri> mapped, Mat gateYellow) {
       // that frame (the old rest pose made both conspicuously ruler-vertical).
       final pivot =
           trs(0, 0.2 + mh + 0.12, sz * 0.2, 0, sx > 0 ? math.pi : 0, 1.36);
-      for (int i = 0; i < n; i++) {
-        final segment = _mul(pivot, trs(seg * (i + 0.5), 0, 0));
-        add(boxGeometry(seg, 0.17, 0.09), i.isEven ? gateYellow : _gateBlack,
-            segment);
-        if (i > 0 && i < n - 1 && i % 3 == 1) {
-          add(boxGeometry(0.03, 0.12, 0.03), _metalDark,
-              _mul(pivot, trs(seg * (i + 0.5), -0.05, 0.06)));
-          add(boxGeometry(0.11, 0.11, 0.07), _signalOff,
-              _mul(pivot, trs(seg * (i + 0.5), -0.14, 0.06)));
+      if (includeBooms) {
+        for (int i = 0; i < n; i++) {
+          final segment = _mul(pivot, trs(seg * (i + 0.5), 0, 0));
+          add(boxGeometry(seg, 0.17, 0.09), i.isEven ? gateYellow : _gateBlack,
+              segment);
+          if (i > 0 && i < n - 1 && i % 3 == 1) {
+            add(boxGeometry(0.03, 0.12, 0.03), _metalDark,
+                _mul(pivot, trs(seg * (i + 0.5), -0.05, 0.06)));
+            add(boxGeometry(0.11, 0.11, 0.07), _signalOff,
+                _mul(pivot, trs(seg * (i + 0.5), -0.14, 0.06)));
+          }
         }
       }
       add(boxGeometry(0.2, 0.2, 0.14), _metalDark,
@@ -129,7 +159,9 @@ void _buildCrossing(List<Part> parts, List<Tri> mapped, Mat gateYellow) {
       final lx = i == 0 ? -0.28 : 0.28;
       add(cylGeometry(0.145, 0.16, 0.13, 12, openEnded: true), _gateBlack,
           _mul(head, trs(lx, -0.12, 0.07, math.pi / 2, 0, 0)));
-      add(cylGeometry(0.13, 0.13, 0.025, 14), i == 0 ? _signalRed : _signalOff,
+      add(
+          cylGeometry(0.13, 0.13, 0.025, 14),
+          includeActiveLamps && i == 0 ? _signalRed : _signalOff,
           _mul(head, trs(lx, -0.12, 0.145, math.pi / 2, 0, 0)));
     }
     add(cylGeometry(0.13, 0.13, 0.18, 10), _metal, _mul(head, trs(0, 0.3, 0)));
@@ -316,7 +348,11 @@ void _buildLinesideWalls(List<Part> parts) {
 }
 
 /// Build the railway (tracks + ballast + sleepers + crossing deck) as a soup.
-List<Tri> buildRailway({int gateYellowColor = 0xf4c033}) {
+List<Tri> buildRailway({
+  int gateYellowColor = 0xf4c033,
+  bool includeCrossingBooms = true,
+  bool includeActiveCrossingLamps = true,
+}) {
   final parts = <Part>[];
   final mapped = <Tri>[];
   final gateYellow = Mat(gateYellowColor, tint: 0x8f7050, bands: '3');
@@ -432,7 +468,9 @@ List<Tri> buildRailway({int gateYellowColor = 0xf4c033}) {
     }
   }
 
-  _buildCrossing(parts, mapped, gateYellow);
+  _buildCrossing(parts, mapped, gateYellow,
+      includeBooms: includeCrossingBooms,
+      includeActiveLamps: includeActiveCrossingLamps);
   _buildStation(parts, mapped);
   _buildLinesideWalls(parts);
 

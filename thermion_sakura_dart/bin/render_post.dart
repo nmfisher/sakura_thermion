@@ -44,7 +44,12 @@ Future<void> main(List<String> arguments) async {
   await viewer.view.setViewport(width, height);
   await app.renderManager.attach(viewer.view, swapChain);
 
-  final sakura = await SakuraApp.create(viewer, arguments: arguments);
+  final sakura = await SakuraApp.create(
+    viewer,
+    arguments: arguments,
+    runtimeAnimations: arguments.contains('--runtime-animations'),
+    groundedCamera: arguments.contains('--grounded-camera'),
+  );
   final scene = await sakura.captureScene();
   await File('/tmp/sakura_post_scene.bin').writeAsBytes(scene);
 

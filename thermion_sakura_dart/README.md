@@ -155,8 +155,10 @@ world needs paged atlases; a single crossing fixture fits one 4096-wide page.
 
 ## Notes
 
-- The scene is static (baked) rather than animated: the train, petals and gates
-  are authored in their opening-frame positions.
+- `SakuraApp.create` keeps the deterministic baked opening frame by default.
+  Set `runtimeAnimations: true` to animate the train, crossing gates and warning
+  lamps, and falling petals. Set `groundedCamera: true` to keep a free-flight
+  camera at the authored walking height above the terrain.
 - Materials are compiled with the v1.75.0 Filament `matc` and embedded as single-line base64 in
   `lib/src/materials_gen.dart` (Dart's `base64Decode` rejects newlines).
   Rebuild the Sakura materials with

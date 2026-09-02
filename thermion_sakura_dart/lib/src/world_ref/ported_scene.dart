@@ -64,6 +64,9 @@ List<Tri> buildPortedScene({
   bool includePetals = true,
   bool includeFallenPetals = true,
   bool includeFallingPetals = false,
+  bool includeTrain = true,
+  bool includeCrossingBooms = true,
+  bool includeActiveCrossingLamps = true,
   // These are accumulated after district construction in three.js. Until the
   // district-returned vegetation is assembled as one batch, enabling only the
   // global subset exposes shrubs that are occluded in the reference opening.
@@ -1005,14 +1008,16 @@ List<Tri> buildPortedScene({
   tris.addAll(bake(wireParts));
 
   // The train at the crossing.
-  add(
-      buildTrain(
-          x: trainX,
-          bodyColor: trainBodyColor,
-          stripeColor: trainStripeColor,
-          windowColor: trainWindowColor),
-      casts: true,
-      group: 'train');
+  if (includeTrain) {
+    add(
+        buildTrain(
+            x: trainX,
+            bodyColor: trainBodyColor,
+            stripeColor: trainStripeColor,
+            windowColor: trainWindowColor),
+        casts: true,
+        group: 'train');
+  }
   if (includeManualTrainSkirtShade) {
     tris.addAll(_trainReceiverBand(
         manualTrainShadowPlaneZ, .42, .60, manualSkirtShadow));
@@ -1046,7 +1051,10 @@ List<Tri> buildPortedScene({
         skirtColor: manualSkirtShadow));
   }
   // The railway tracks + ballast + sleepers + crossing deck.
-  final railway = buildRailway(gateYellowColor: gateYellowColor)
+  final railway = buildRailway(
+          gateYellowColor: gateYellowColor,
+          includeCrossingBooms: includeCrossingBooms,
+          includeActiveCrossingLamps: includeActiveCrossingLamps)
       .where(outsideEastReplacement)
       .toList(growable: false);
   add(railway, casts: true, group: 'railway');
