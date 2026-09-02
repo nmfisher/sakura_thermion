@@ -1,0 +1,61 @@
+material {
+    name : SakuraPetals,
+    requires : [ position ],
+    shadingModel : unlit,
+    blending : opaque,
+    culling : back,
+    depthWrite : true,
+    depthCulling : true,
+    vertexDomain : object,
+    instanced : true,
+    variables : [ petalColor ],
+    parameters : [
+        { type : sampler2d, name : instanceData },
+        { type : float, name : cameraNear },
+        { type : float3, name : fogColor },
+        { type : float, name : fogNear },
+        { type : float, name : fogFar }
+    ]
+}
+vertex {
+    vec3 rotateQuaternion(vec3 point, vec4 q) {
+        return point + 2.0 * cross(q.xyz, cross(q.xyz, point) + q.w * point);
+    }
+
+    vec3 planetPosition(vec3 authored) {
+        const float radius = 160.0;
+        float longitude = authored.x / radius;
+        float latitude = authored.z / radius;
+        float cp = cos(latitude);
+        vec3 up = vec3(sin(longitude) * cp,
+                       cos(longitude) * cp,
+                       sin(latitude));
+        return up * (radius + authored.y) + vec3(0.0, -radius, 0.0);
+    }
+
+    void materialVertex(inout MaterialVertexInputs m) {
+        int instance = getInstanceIndex();
+        vec4 positionScale = texelFetch(materialParams_instanceData,
+                                        ivec2(0, instance), 0);
+        vec4 rotation = texelFetch(materialParams_instanceData,
+                                   ivec2(1, instance), 0);
+        m.petalColor = texelFetch(materialParams_instanceData,
+                                  ivec2(2, instance), 0);
+        vec3 authored = positionScale.xyz +
+            rotateQuaternion(getPosition().xyz * positionScale.w, rotation);
+        m.worldPosition = vec4(planetPosition(authored), 1.0);
+    }
+}
+fragment {
+    void material(inout MaterialInputs m) {
+        prepareMaterial(m);
+        vec3 worldPosition = getWorldPosition().xyz;
+        vec4 viewPosition = getViewFromWorldMatrix() * vec4(worldPosition, 1.0);
+        float viewZ = max(-viewPosition.z, materialParams.cameraNear);
+        float fogFactor = smoothstep(materialParams.fogNear,
+                                     materialParams.fogFar, viewZ);
+        vec3 color = mix(variable_petalColor.rgb, materialParams.fogColor, fogFactor);
+        // Negative depth preserves the petals' authored no-outline marker.
+        m.baseColor = vec4(color, -materialParams.cameraNear / viewZ);
+    }
+}

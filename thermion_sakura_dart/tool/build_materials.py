@@ -24,6 +24,7 @@ VARIABLES = {
     "sakura_depthenc": "sakuraDepthEncFilamat",
     "sakura_ink": "sakuraInkFilamat",
     "sakura_lit": "sakuraLitFilamat",
+    "sakura_petals": "sakuraPetalsFilamat",
     "sakura_post": "sakuraPostFilamat",
     "sakura_shadow_caster": "sakuraShadowCasterFilamat",
     "sakura_shadow_receiver": "sakuraShadowReceiverFilamat",

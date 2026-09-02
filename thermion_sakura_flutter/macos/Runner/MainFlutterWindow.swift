@@ -4,6 +4,7 @@ import FlutterMacOS
 class MainFlutterWindow: NSWindow {
   private var mouseCaptureChannel: FlutterMethodChannel?
   private var mouseCaptured = false
+  private var mouseEventMonitor: Any?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -32,6 +33,17 @@ class MainFlutterWindow: NSWindow {
         result(FlutterMethodNotImplemented)
       }
     }
+    acceptsMouseMovedEvents = true
+    mouseEventMonitor = NSEvent.addLocalMonitorForEvents(
+      matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+    ) { [weak self] event in
+      guard let self, self.mouseCaptured else { return event }
+      self.mouseCaptureChannel?.invokeMethod("delta", arguments: [
+        "dx": event.deltaX,
+        "dy": event.deltaY,
+      ])
+      return event
+    }
     NotificationCenter.default.addObserver(
       self,
       selector: #selector(applicationDidResignActive),
@@ -58,6 +70,9 @@ class MainFlutterWindow: NSWindow {
 
   deinit {
     setMouseCaptured(false)
+    if let mouseEventMonitor {
+      NSEvent.removeMonitor(mouseEventMonitor)
+    }
     NotificationCenter.default.removeObserver(self)
   }
 }

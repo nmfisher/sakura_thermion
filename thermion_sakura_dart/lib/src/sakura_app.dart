@@ -43,6 +43,19 @@ Future<void> _writeCapturePng(
   stdout.writeln('wrote ' + path);
 }
 
+/// Groups the flat authored world before planet wrapping so every resulting
+/// Filament renderable has a local bounding box. A single map-sized renderable
+/// prevents view-frustum culling even when only one street is visible.
+List<List<Tri>> _spatialChunks(List<Tri> tris, {double size = 48.0}) {
+  final chunks = <(int, int), List<Tri>>{};
+  for (final tri in tris) {
+    final center = tri.centroid;
+    final key = ((center.x / size).floor(), (center.z / size).floor());
+    (chunks[key] ??= <Tri>[]).add(tri);
+  }
+  return chunks.values.toList(growable: false);
+}
+
 /// The complete Sakura ported renderer shared by headless Dart and Flutter.
 ///
 /// Platform hosts own the Filament engine, viewer, swapchain, and presentation
@@ -306,12 +319,11 @@ class SakuraApp {
         if (group.isNotEmpty) nativeCasterFlatBatches.add(group);
       }
     }
-    final allTris = referenceBytes == null
-        ? wrapOnPlanet(flatTris, maxEdge: wrapEdge)
-        : <Tri>[];
-    final nativeReceiverTris = referenceBytes == null
-        ? wrapOnPlanet(flatTris, maxEdge: wrapEdge)
-        : <Tri>[];
+    final flatWorldChunks = referenceBytes == null
+        ? argv.contains('--no-spatial-chunks')
+            ? <List<Tri>>[flatTris]
+            : _spatialChunks(flatTris)
+        : const <List<Tri>>[];
     final surfaceUp = Vector3.zero();
     final surfaceEast = Vector3.zero();
     final surfaceNorth = Vector3.zero();
@@ -325,25 +337,36 @@ class SakuraApp {
     final sunDir = worldLight(cel.sunDir);
     final fillDir = worldLight(cel.fillDir);
     final bounceDir = worldLight(cel.bounceDir);
-    final packed = referenceBytes == null
-        ? trisToPacked(allTris)
-        : refGeoToPacked(
-            referenceBytes,
-            SunShadowMap(refGeoPositions(referenceBytes, onlyLit: true), sunDir,
-                // Radius-clipped fixtures have incomplete caster coverage, so
-                // defer V2 shadows to the later per-pixel shadow path.
-                bias: refGeoInfo(referenceBytes).version >= 2 ? 1e9 : 6.0));
+    final worldPackedChunks = referenceBytes == null
+        ? [
+            for (final chunk in flatWorldChunks)
+              trisToPacked(wrapOnPlanet(chunk, maxEdge: wrapEdge)),
+          ]
+        : [
+            refGeoToPacked(
+                referenceBytes,
+                SunShadowMap(
+                    refGeoPositions(referenceBytes, onlyLit: true), sunDir,
+                    // Radius-clipped fixtures have incomplete caster coverage,
+                    // so defer V2 shadows to the later per-pixel shadow path.
+                    bias: refGeoInfo(referenceBytes).version >= 2 ? 1e9 : 6.0)),
+          ];
     final nativeCasterPackedBatches = referenceBytes == null
         ? [
             for (final batch in nativeCasterFlatBatches)
               trisToPacked(wrapOnPlanet(batch, maxEdge: wrapEdge)),
           ]
         : const <PackedGeo>[];
-    final nativeReceiverPacked =
-        referenceBytes == null ? trisToPacked(nativeReceiverTris) : null;
+    final nativeReceiverPackedChunks =
+        referenceBytes == null ? worldPackedChunks : const <PackedGeo>[];
     if (referenceBytes != null) {
       stdout.writeln('reference geometry: ${referenceBytes.length} bytes, '
-          '${packed.positions.length ~/ 3} verts');
+          '${worldPackedChunks.single.positions.length ~/ 3} verts');
+    } else {
+      final vertices = worldPackedChunks.fold<int>(
+          0, (total, chunk) => total + chunk.positions.length ~/ 3);
+      stdout.writeln(
+          'world geometry: ${worldPackedChunks.length} spatial chunks, $vertices verts');
     }
 
     if (viewer is! ThermionViewerFFI) {
@@ -446,9 +469,10 @@ class SakuraApp {
         wrapT: TextureWrapMode.CLAMP_TO_EDGE);
     await toonInst.setParameterTexture('albedoAtlas', albedoAtlas as FFITexture,
         atlasSampler as FFITextureSampler);
-    final atlasMetadataValues = packed.atlasRegions.isEmpty
+    final atlasRegions = worldPackedChunks.first.atlasRegions;
+    final atlasMetadataValues = atlasRegions.isEmpty
         ? Float32List.fromList([0, 0, 0, 0])
-        : packed.atlasRegions;
+        : atlasRegions;
     final atlasMetadata =
         await app.createTexture(atlasMetadataValues.length ~/ 4, 1,
             flags: {
@@ -603,32 +627,36 @@ class SakuraApp {
     await toonInst.setParameterTexture('shadowMap', shadowColor as FFITexture,
         shadowSampler as FFITextureSampler);
 
-    final worldAsset = await v1.createGeometry(
-        Geometry(packed.positions, packed.indices,
-            normals: packed.normals,
-            colors: packed.colors,
-            uvs: packed.uvs,
-            uvs1: packed.uvs1,
-            attribute0: packed.attribute0),
-        materialInstances: [toonInst]);
-    await worldAsset.setCastShadows(false);
-    await worldAsset.setReceiveShadows(false);
+    for (final packed in worldPackedChunks) {
+      if (packed.positions.isEmpty) continue;
+      final worldAsset = await v1.createGeometry(
+          Geometry(packed.positions, packed.indices,
+              normals: packed.normals,
+              colors: packed.colors,
+              uvs: packed.uvs,
+              uvs1: packed.uvs1,
+              attribute0: packed.attribute0),
+          materialInstances: [toonInst]);
+      await worldAsset.setCastShadows(false);
+      await worldAsset.setReceiveShadows(false);
+    }
 
     final nativeShadowMat =
         await app.createMaterial(sakuraShadowReceiverFilamat);
     final nativeShadowInst = await nativeShadowMat.createInstance();
-    if (nativeReceiverPacked != null &&
-        nativeReceiverPacked.positions.isNotEmpty) {
+    if (nativeReceiverPackedChunks.isNotEmpty) {
       final shadowLayers =
           parseGradeValue('native-shadow-layers', 1).round().clamp(1, 4);
       for (var layer = 0; layer < shadowLayers; layer++) {
-        final nativeReceiverAsset = await v1.createGeometry(
-            Geometry(
-                nativeReceiverPacked.positions, nativeReceiverPacked.indices,
-                normals: nativeReceiverPacked.normals),
-            materialInstances: [nativeShadowInst]);
-        await nativeReceiverAsset.setCastShadows(false);
-        await nativeReceiverAsset.setReceiveShadows(true);
+        for (final packed in nativeReceiverPackedChunks) {
+          if (packed.positions.isEmpty) continue;
+          final nativeReceiverAsset = await v1.createGeometry(
+              Geometry(packed.positions, packed.indices,
+                  normals: packed.normals),
+              materialInstances: [nativeShadowInst]);
+          await nativeReceiverAsset.setCastShadows(false);
+          await nativeReceiverAsset.setReceiveShadows(true);
+        }
       }
     }
 
@@ -854,7 +882,9 @@ class SakuraApp {
             groundedCamera: groundedCamera,
             animateTrain: !argv.contains('--no-runtime-train'),
             animateBooms: !argv.contains('--no-runtime-booms'),
-            animatePetals: !argv.contains('--no-runtime-petals'))
+            animatePetals: !argv.contains('--no-runtime-petals'),
+            instancePetals: !argv.contains('--cpu-runtime-petals'),
+            freezeWorld: argv.contains('--freeze-runtime'))
         : groundedCamera
             ? await _SakuraRuntime.create(v1, toonInst,
                 groundedCamera: true, animateWorld: false)
@@ -950,9 +980,87 @@ Future<Uint8List> _loadPackageAsset(
   return File.fromUri(uri).readAsBytes();
 }
 
+Uint8List _floatBytes(Float32List values) =>
+    values.buffer.asUint8List(values.offsetInBytes, values.lengthInBytes);
+
+Future<void> _uploadPetalInstances(
+        Texture texture, FallingPetalSimulation petals) =>
+    texture.setImage(0, _floatBytes(petals.instanceData()), 3,
+        petals.instanceCount, PixelDataFormat.RGBA, PixelDataType.FLOAT);
+
+/// Builds one true instanced draw for all animated petals. The tiny silhouette
+/// buffers remain static; only three RGBA32F texels per instance are uploaded
+/// as the simulation advances.
+Future<Texture> _createInstancedPetals(
+    ThermionViewerFFI viewer, FallingPetalSimulation petals) async {
+  final app = viewer.app;
+  final geometry = petals.geometry;
+  final vertexBuffer = await (app.renderableManager.createVertexBufferBuilder()
+        ..bufferCount(1)
+        ..vertexCount(geometry.vertexCount)
+        ..attribute(VertexAttribute.POSITION, 0, VertexAttributeType.FLOAT3,
+            byteStride: 12))
+      .build();
+  await vertexBuffer.setBufferAt(0, geometry.positions);
+
+  final indexBuffer = await (app.renderableManager.createIndexBufferBuilder()
+        ..indexCount(geometry.indices.length)
+        ..bufferType(IndexType.USHORT))
+      .build();
+  await indexBuffer.setBuffer(Uint16List.fromList(geometry.indices));
+
+  final instanceTexture = await app.createTexture(3, petals.instanceCount,
+      flags: {
+        TextureUsage.TEXTURE_USAGE_SAMPLEABLE,
+        TextureUsage.TEXTURE_USAGE_UPLOADABLE,
+      },
+      textureFormat: TextureFormat.RGBA32F);
+  await _uploadPetalInstances(instanceTexture, petals);
+  final sampler = await app.createTextureSampler(
+      minFilter: TextureMinFilter.NEAREST,
+      magFilter: TextureMagFilter.NEAREST,
+      wrapS: TextureWrapMode.CLAMP_TO_EDGE,
+      wrapT: TextureWrapMode.CLAMP_TO_EDGE);
+  final material = await app.createMaterial(sakuraPetalsFilamat);
+  final materialInstance = await material.createInstance();
+  await materialInstance.setParameterTexture(
+      'instanceData', instanceTexture, sampler);
+  await materialInstance.setParameterFloat('cameraNear', .25);
+  final fog = C.lin(Pal.fog);
+  await materialInstance.setParameterFloat3('fogColor', fog.x, fog.y, fog.z);
+  await materialInstance.setParameterFloat('fogNear', 44);
+  await materialInstance.setParameterFloat('fogFar', 205);
+
+  final entity = await app.createEntity();
+  final builder = app.renderableManager.createBuilder(1)
+    ..boundingBox(Aabb3.minMax(Vector3(-20, -10, -38), Vector3(20, 12, 40)))
+    ..geometry(0, PrimitiveType.TRIANGLES, vertexBuffer, indexBuffer, 0,
+        geometry.indices.length)
+    ..material(0, materialInstance)
+    ..instances(petals.instanceCount)
+    ..castShadows(false)
+    ..receiveShadows(false);
+  if (!await builder.build(entity)) {
+    throw StateError('Failed to build instanced falling petals');
+  }
+  final scene = await viewer.view.getScene();
+  await scene.addEntity(entity);
+  stdout.writeln(
+      'falling petals: ${petals.instanceCount} instances, ${geometry.vertexCount} shared verts');
+  return instanceTexture;
+}
+
 class _SakuraRuntime {
-  _SakuraRuntime._(this.viewer, this.camera, this.train, this.booms, this.lamps,
-      this.petals, this.petalBuffer, this.groundedCamera);
+  _SakuraRuntime._(
+      this.viewer,
+      this.camera,
+      this.train,
+      this.booms,
+      this.lamps,
+      this.petals,
+      this.petalBuffer,
+      this.petalInstanceTexture,
+      this.groundedCamera);
 
   final ThermionViewerFFI viewer;
   final Camera camera;
@@ -961,6 +1069,7 @@ class _SakuraRuntime {
   final List<_CrossingLamp> lamps;
   final FallingPetalSimulation? petals;
   final VertexBuffer? petalBuffer;
+  final Texture? petalInstanceTexture;
   final bool groundedCamera;
   final Stopwatch _clock = Stopwatch();
   double _trainX = .392;
@@ -980,12 +1089,15 @@ class _SakuraRuntime {
     bool animateTrain = true,
     bool animateBooms = true,
     bool animatePetals = true,
+    bool instancePetals = true,
+    bool freezeWorld = false,
   }) async {
     ThermionAsset? train;
     final booms = <ThermionAsset>[];
     final lamps = <_CrossingLamp>[];
     FallingPetalSimulation? petals;
     VertexBuffer? petalBuffer;
+    Texture? petalInstanceTexture;
 
     Future<ThermionAsset> add(List<Tri> tris, {bool casts = false}) async {
       final packed = trisToPacked(tris);
@@ -1044,18 +1156,31 @@ class _SakuraRuntime {
       }
       if (animatePetals) {
         petals = FallingPetalSimulation();
-        final asset = await add(wrapOnPlanet(petals.triangles(), maxEdge: 1),
-            casts: false);
-        petalBuffer = asset.getVertexBuffer();
-        if (petalBuffer == null) {
-          throw StateError('Runtime petal geometry has no writable buffer');
+        if (instancePetals) {
+          petalInstanceTexture = await _createInstancedPetals(viewer, petals);
+        } else {
+          final asset = await add(wrapOnPlanet(petals.triangles(), maxEdge: 1),
+              casts: false);
+          petalBuffer = asset.getVertexBuffer();
+          if (petalBuffer == null) {
+            throw StateError('Runtime petal geometry has no writable buffer');
+          }
         }
       }
     }
 
-    final runtime = _SakuraRuntime._(viewer, await viewer.getActiveCamera(),
-        train, booms, lamps, petals, petalBuffer, groundedCamera);
+    final runtime = _SakuraRuntime._(
+        viewer,
+        await viewer.getActiveCamera(),
+        train,
+        booms,
+        lamps,
+        petals,
+        petalBuffer,
+        petalInstanceTexture,
+        groundedCamera);
     runtime._spawnCamera = await runtime.camera.getModelMatrix();
+    runtime.paused = freezeWorld;
     runtime._clock.start();
     viewer.app.registerRequestFrameHook(runtime._onFrame);
     await runtime._onFrame();
@@ -1141,13 +1266,18 @@ class _SakuraRuntime {
               visible ? 1 : .001, visible ? 1 : .001, visible ? 1 : .001));
     }
 
-    if (petals != null && petalBuffer != null) {
+    if (petals != null &&
+        (petalInstanceTexture != null || petalBuffer != null)) {
       final near = math.max(0.0, 1 - _trainX.abs() / 46);
       _gust = math.max(_gust * math.exp(-dt * 1.4), near * near);
       petals!.update(dt, _gust, 1);
-      final packed =
-          trisToPacked(wrapOnPlanet(petals!.triangles(), maxEdge: 1));
-      await petalBuffer!.setBufferAt(0, packed.positions);
+      if (petalInstanceTexture != null) {
+        await _uploadPetalInstances(petalInstanceTexture!, petals!);
+      } else {
+        final packed =
+            trisToPacked(wrapOnPlanet(petals!.triangles(), maxEdge: 1));
+        await petalBuffer!.setBufferAt(0, packed.positions);
+      }
     }
   }
 

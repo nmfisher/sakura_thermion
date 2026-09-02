@@ -10,6 +10,7 @@ import 'dart:typed_data';
 import 'package:vector_math/vector_math_64.dart';
 
 import '../geom/three_geom.dart';
+import '../palette.dart';
 import 'street.dart' show centerX, groundY;
 
 // ── Palette (palette.js) ──────────────────────────────────────────────────
@@ -328,7 +329,36 @@ class FallingPetalSimulation {
   final RngKit _rng;
   final List<_FallingPetal> _petals = [];
   final ThreeGeom _geometry = _petalGeometry(.185, .135);
+  late final Float32List _instanceData = Float32List(_petals.length * 12);
   double _time = 0;
+
+  int get instanceCount => _petals.length;
+  ThreeGeom get geometry => _geometry;
+
+  /// Three RGBA32F texels per petal: position/scale, quaternion, linear color.
+  /// This is consumed by the instanced petal material without expanding the
+  /// shared silhouette into a per-frame triangle soup.
+  Float32List instanceData() {
+    var offset = 0;
+    for (final petal in _petals) {
+      final rotation = Quaternion.axisAngle(petal.spin, petal.angle);
+      final color = C.lin(petal.mat.color);
+      _instanceData
+        ..[offset++] = petal.x
+        ..[offset++] = petal.y
+        ..[offset++] = petal.z
+        ..[offset++] = petal.scale
+        ..[offset++] = rotation.x
+        ..[offset++] = rotation.y
+        ..[offset++] = rotation.z
+        ..[offset++] = rotation.w
+        ..[offset++] = color.x
+        ..[offset++] = color.y
+        ..[offset++] = color.z
+        ..[offset++] = 1.0;
+    }
+    return _instanceData;
+  }
 
   void update(double dt, double gust, double gustDir) {
     _time += dt;

@@ -316,6 +316,9 @@ class _ExplorerPageState extends State<ExplorerPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     services.HardwareKeyboard.instance.addHandler(_handleKey);
+    if (Platform.isMacOS) {
+      _mouseCaptureChannel.setMethodCallHandler(_handleNativeMouseEvent);
+    }
     // The bundled asset loads automatically on startup (see build → ViewerWidget
     // with _source defaulting to the asset). No /tmp dependency.
   }
@@ -326,6 +329,9 @@ class _ExplorerPageState extends State<ExplorerPage>
     services.HardwareKeyboard.instance.removeHandler(_handleKey);
     _walkTimer?.cancel();
     _resizeSettleTimer?.cancel();
+    if (Platform.isMacOS) {
+      _mouseCaptureChannel.setMethodCallHandler(null);
+    }
     unawaited(_setMouseCaptured(false));
     final scene = _portedScene;
     if (scene != null) unawaited(scene.dispose());
@@ -430,6 +436,21 @@ class _ExplorerPageState extends State<ExplorerPage>
     }
   }
 
+  Future<void> _handleNativeMouseEvent(services.MethodCall call) async {
+    if (call.method != 'delta' || !_mouseCaptured || _menuOpen || !_ported) {
+      return;
+    }
+    final arguments = Map<Object?, Object?>.from(call.arguments as Map);
+    final dx = (arguments['dx'] as num?)?.toDouble() ?? 0;
+    final dy = (arguments['dy'] as num?)?.toDouble() ?? 0;
+    await _portedScene?.controlCamera(
+      yaw: dx * _lookSensitivity,
+      // Cocoa deltaY is positive for upward physical motion. Positive local-X
+      // pitch looks down, giving the requested inverted vertical control.
+      pitch: dy * _lookSensitivity,
+    );
+  }
+
   void _startWalkTimer() {
     _walkTimer ??= Timer.periodic(const Duration(milliseconds: 16), (_) {
       if (_menuOpen || !_ready || !_ported || _heldKeys.isEmpty) return;
@@ -450,7 +471,9 @@ class _ExplorerPageState extends State<ExplorerPage>
   }
 
   void _look(services.PointerHoverEvent event) {
-    if (!_mouseCaptured || _menuOpen || !_ported) return;
+    // Captured macOS input arrives as native relative deltas. Disassociating
+    // the cursor intentionally suppresses ordinary Flutter hover movement.
+    if (Platform.isMacOS || !_mouseCaptured || _menuOpen || !_ported) return;
     unawaited(_portedScene?.controlCamera(
           yaw: event.delta.dx * _lookSensitivity,
           // Intentionally inverted: moving the mouse up looks down.
@@ -735,83 +758,85 @@ class _SakuraMenu extends StatelessWidget {
               final art = SizedBox(
                 width: artWidth,
                 height: narrow ? 88 : panelHeight,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: red,
-                    border: Border(
-                      right: narrow
-                          ? BorderSide.none
-                          : const BorderSide(color: ink, width: 2),
-                      bottom: narrow
-                          ? const BorderSide(color: ink, width: 2)
-                          : BorderSide.none,
+                child: ClipRect(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: red,
+                      border: Border(
+                        right: narrow
+                            ? BorderSide.none
+                            : const BorderSide(color: ink, width: 2),
+                        bottom: narrow
+                            ? const BorderSide(color: ink, width: 2)
+                            : BorderSide.none,
+                      ),
                     ),
-                  ),
-                  child: CustomPaint(
-                    painter: const _MenuArtPainter(),
-                    child: Stack(children: [
-                      const Positioned(
-                        left: 21,
-                        top: 20,
-                        child: Text('NIHONMACHI · 05:42 PM',
-                            style: TextStyle(
-                                color: Color(0xDBFFF8EF),
-                                fontFamily: 'monospace',
-                                fontSize: 10,
-                                letterSpacing: 1.8,
-                                fontWeight: FontWeight.w700)),
-                      ),
-                      if (!narrow)
+                    child: CustomPaint(
+                      painter: const _MenuArtPainter(),
+                      child: Stack(children: [
                         const Positioned(
-                          right: 17,
-                          top: 18,
-                          child: _VerticalText('春の日本街'),
-                        )
-                      else
-                        const Positioned(
-                          left: 22,
-                          top: 39,
-                          child: Text('春の日本街',
+                          left: 21,
+                          top: 20,
+                          child: Text('NIHONMACHI · 05:42 PM',
                               style: TextStyle(
-                                  color: Color(0xFFFFF8EF),
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 3)),
+                                  color: Color(0xDBFFF8EF),
+                                  fontFamily: 'monospace',
+                                  fontSize: 10,
+                                  letterSpacing: 1.8,
+                                  fontWeight: FontWeight.w700)),
                         ),
-                      Positioned(
-                        left: narrow ? null : (artWidth - 150) / 2,
-                        right: narrow ? 8 : null,
-                        top: narrow ? -31 : panelHeight! * .46 - 75,
-                        child: Transform.scale(
-                            scale: narrow ? .48 : (medium ? .72 : 1),
-                            alignment: narrow
-                                ? Alignment.centerRight
-                                : Alignment.center,
-                            child: const _CrossingMark()),
-                      ),
-                      if (!medium && !narrow)
-                        const Positioned(
-                          left: 22,
-                          bottom: 26,
-                          child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('WALK SLOWLY',
-                                    style: TextStyle(
-                                        color: Color(0xFFFFF8EF),
-                                        fontSize: 11,
-                                        letterSpacing: 1.32,
-                                        fontWeight: FontWeight.w700)),
-                                SizedBox(height: 4),
-                                Text('桜の季節',
-                                    style: TextStyle(
-                                        color: Color(0xFFFFF8EF),
-                                        fontSize: 17,
-                                        letterSpacing: 1,
-                                        fontWeight: FontWeight.w800)),
-                              ]),
+                        if (!narrow)
+                          const Positioned(
+                            right: 17,
+                            top: 18,
+                            child: _VerticalText('春の日本街'),
+                          )
+                        else
+                          const Positioned(
+                            left: 22,
+                            top: 39,
+                            child: Text('春の日本街',
+                                style: TextStyle(
+                                    color: Color(0xFFFFF8EF),
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 3)),
+                          ),
+                        Positioned(
+                          left: narrow ? null : (artWidth - 150) / 2,
+                          right: narrow ? 8 : null,
+                          top: narrow ? -31 : panelHeight! * .46 - 75,
+                          child: Transform.scale(
+                              scale: narrow ? .48 : (medium ? .72 : 1),
+                              alignment: narrow
+                                  ? Alignment.centerRight
+                                  : Alignment.center,
+                              child: const _CrossingMark()),
                         ),
-                    ]),
+                        if (!medium && !narrow)
+                          const Positioned(
+                            left: 22,
+                            bottom: 26,
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('WALK SLOWLY',
+                                      style: TextStyle(
+                                          color: Color(0xFFFFF8EF),
+                                          fontSize: 11,
+                                          letterSpacing: 1.32,
+                                          fontWeight: FontWeight.w700)),
+                                  SizedBox(height: 4),
+                                  Text('桜の季節',
+                                      style: TextStyle(
+                                          color: Color(0xFFFFF8EF),
+                                          fontSize: 17,
+                                          letterSpacing: 1,
+                                          fontWeight: FontWeight.w800)),
+                                ]),
+                          ),
+                      ]),
+                    ),
                   ),
                 ),
               );
@@ -948,6 +973,7 @@ class _SakuraMenu extends StatelessWidget {
                         offset: Offset(0, 28)),
                   ],
                 ),
+                clipBehavior: Clip.antiAlias,
                 child: Stack(children: [
                   narrow
                       ? SingleChildScrollView(
